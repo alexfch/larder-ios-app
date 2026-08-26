@@ -9,4 +9,16 @@ including exported snapshots and links to live interactive versions.
 
 ## Product
 
-<!-- Link to PRD here once it lives in the repo, e.g. docs/prd.md -->
+The PRD lives at [docs/Larder_PRD_v2.0.md](docs/Larder_PRD_v2.0.md).
+
+## Development
+
+Native SwiftUI + SwiftData, iOS 17+. The Xcode project is generated from
+[`project.yml`](project.yml) via [XcodeGen](https://github.com/yonaskolb/XcodeGen) rather than
+committed directly, so it never goes stale relative to the file layout:
+
+```bash
+brew install xcodegen   # once
+xcodegen generate       # after pulling, or after adding/removing files
+open Larder.xcodeproj
+```
