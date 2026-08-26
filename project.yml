@@ -1,0 +1,52 @@
+name: Larder
+options:
+  bundleIdPrefix: com.bolzhelarskyi
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: "Q372K82YLB"
+    CODE_SIGN_STYLE: Automatic
+    ONLY_ACTIVE_ARCH: "YES"
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+targets:
+  Larder:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Larder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bolzhelarskyi.larder
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        INFOPLIST_KEY_NSCameraUsageDescription: "Larder uses the camera to scan product barcodes when checking items in or out."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Larder uses your photo library so you can attach a picture to a product."
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        ENABLE_ON_DEMAND_RESOURCES: "NO"
+  LarderTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: LarderTests
+    dependencies:
+      - target: Larder
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+schemes:
+  Larder:
+    build:
+      targets:
+        Larder: all
+        LarderTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LarderTests
