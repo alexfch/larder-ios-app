@@ -70,24 +70,32 @@ enum StockService {
 
     // MARK: Correctable history (FR-6.1)
 
+    /// Validate-then-apply, same pattern as `CountSessionService.apply`: reversing the original
+    /// effect and applying the new one used to be two live mutations, with a failure on the
+    /// second caught and patched over by a `try?`-restore of the first — silent if that restore
+    /// itself failed, and never proven to land back on the exact original state. Instead, both
+    /// the reversal and the new effect are proven individually feasible via pure arithmetic
+    /// against the item's current on-hand total before any lot is touched, then both mutations
+    /// happen inside one `context.transaction` as a defensive atomicity boundary.
     static func edit(_ transaction: Transaction, newQty: Double, newExp: Date, context: ModelContext) throws {
         guard let item = transaction.item else { return }
         let normalizedNewExp = Calendar.current.startOfDay(for: newExp)
         let originalAction = transaction.action
-        let originalQty = transaction.qty
-        let originalExp = transaction.exp
 
-        reverseEffect(of: transaction, context: context)
-        do {
-            try applyEffect(item: item, action: originalAction, qty: newQty, exp: normalizedNewExp, context: context)
-        } catch {
-            // Restore the original effect so a failed edit never leaves stock half-reversed.
-            try? applyEffect(item: item, action: originalAction, qty: originalQty, exp: originalExp, context: context)
-            throw error
+        guard canReverse(transaction, currentTotal: item.onHandTotal) else {
+            throw StockServiceError.insufficientStock
+        }
+        let totalAfterReversal = item.onHandTotal - netEffect(action: originalAction, qty: transaction.qty)
+        guard canApplyEffect(action: originalAction, qty: newQty, currentTotal: totalAfterReversal) else {
+            throw StockServiceError.insufficientStock
         }
 
-        transaction.qty = newQty
-        transaction.exp = normalizedNewExp
+        try context.transaction {
+            reverseEffect(of: transaction, context: context)
+            try applyEffect(item: item, action: originalAction, qty: newQty, exp: normalizedNewExp, context: context)
+            transaction.qty = newQty
+            transaction.exp = normalizedNewExp
+        }
     }
 
     static func remove(_ transaction: Transaction, context: ModelContext) {
@@ -97,6 +105,12 @@ enum StockService {
     }
 
     // MARK: Stock-take adjustments (FR-7.3)
+
+    /// Pure feasibility check for `applyAdjustment` — no `ModelContext` mutation, so callers can
+    /// validate a whole batch of adjustments up front before committing to any of them.
+    static func canApplyAdjustment(item: Item, delta: Double) -> Bool {
+        canApplyEffect(action: .adjust, qty: delta, currentTotal: item.onHandTotal)
+    }
 
     /// Writes one signed adjustment transaction against the item's earliest lot. A positive
     /// delta means the count found more than the book (IN-like); negative means less (OUT-like).
@@ -116,6 +130,32 @@ enum StockService {
     }
 
     // MARK: Private helpers
+
+    /// Net signed change to `item.onHandTotal` that applying `action` with `qty` produces.
+    /// `.checkIn` always adds; `.checkOut` always subtracts; `.adjust`'s `qty` is already signed.
+    private static func netEffect(action: TransactionAction, qty: Double) -> Double {
+        switch action {
+        case .checkIn:
+            return qty
+        case .checkOut:
+            return -qty
+        case .adjust:
+            return qty
+        }
+    }
+
+    /// Pure feasibility check: would applying `action`/`qty` against a total of `currentTotal`
+    /// ever ask `removeFromLots` for more than is on hand?
+    private static func canApplyEffect(action: TransactionAction, qty: Double, currentTotal: Double) -> Bool {
+        let effect = netEffect(action: action, qty: qty)
+        return effect >= 0 || currentTotal >= -effect
+    }
+
+    /// Feasibility of undoing `transaction`'s original effect — the inverse of `netEffect`.
+    private static func canReverse(_ transaction: Transaction, currentTotal: Double) -> Bool {
+        let reversalEffect = -netEffect(action: transaction.action, qty: transaction.qty)
+        return reversalEffect >= 0 || currentTotal >= -reversalEffect
+    }
 
     private static func reverseEffect(of transaction: Transaction, context: ModelContext) {
         guard let item = transaction.item else { return }

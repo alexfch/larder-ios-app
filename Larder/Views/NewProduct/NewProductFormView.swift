@@ -23,6 +23,7 @@ struct NewProductFormView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
     @State private var nameError = false
+    @State private var barcodeError: String?
     @State private var lookupState: LookupState = .idle
 
     private enum LookupState {
@@ -43,6 +44,12 @@ struct NewProductFormView: View {
 
                     TextField("Barcode (optional)", text: $barcode)
                         .keyboardType(.numberPad)
+                        .onChange(of: barcode) { _, _ in barcodeError = nil }
+                    if let barcodeError {
+                        Text(barcodeError)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.larderAccent)
+                    }
                     switch lookupState {
                     case .loading:
                         Label("Looking up product…", systemImage: "arrow.triangle.2.circlepath")
@@ -150,9 +157,23 @@ struct NewProductFormView: View {
             return
         }
 
+        let trimmedBarcode = barcode.trimmingCharacters(in: .whitespaces)
+
+        // Barcode is the de facto identity scans resolve against (Check In, Check Out, and
+        // Count scan-sweep all match on it) — nothing in the schema enforces uniqueness, so a
+        // second item saved with the same code would silently steal scans from the first and
+        // desync its on-hand total with no error surfaced. Block it here instead, per the
+        // architecture review's recommendation to do this as an explicit app-level check rather
+        // than a SwiftData @Attribute(.unique) (whose autosave-merge behavior isn't validated
+        // for this app yet).
+        if !trimmedBarcode.isEmpty, let existing = existingItem(forBarcode: trimmedBarcode) {
+            barcodeError = "This barcode is already used by “\(existing.name)”. Check stock in against that item instead of adding a duplicate."
+            return
+        }
+
         let item = Item(
             name: name,
-            barcode: barcode.isEmpty ? nil : barcode,
+            barcode: trimmedBarcode.isEmpty ? nil : trimmedBarcode,
             kind: kind,
             unit: kind == .bulk ? bulkUnit : nil,
             noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil,
@@ -162,5 +183,11 @@ struct NewProductFormView: View {
         StockService.checkIn(item: item, qty: quantity, exp: expDate, context: context)
         toastCenter.show("\(item.name) added to Stock")
         dismiss()
+    }
+
+    private func existingItem(forBarcode code: String) -> Item? {
+        var descriptor = FetchDescriptor<Item>(predicate: #Predicate { $0.barcode == code })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 }

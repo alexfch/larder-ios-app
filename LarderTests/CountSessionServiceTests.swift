@@ -45,8 +45,35 @@ final class CountSessionServiceTests: XCTestCase {
         XCTAssertEqual(a.transactions.count, 1, "only the original check-in")
         XCTAssertEqual(b.onHandTotal, 6)
         XCTAssertEqual(b.transactions.count, 2, "check-in plus one adjustment")
-        XCTAssertEqual(b.transactions.last?.action, .adjust)
+        XCTAssertEqual(b.sortedTransactions.first?.action, .adjust, "most recent transaction, by occurredAt")
         XCTAssertEqual(session.status, .applied)
+    }
+
+    func testApplyIsAllOrNothingWhenOneLineBecomesInfeasible() throws {
+        // Regression test for the validate-then-apply fix: a session snapshots book quantity at
+        // start, but stock can change before apply (e.g. a check-out elsewhere in the app). If
+        // that leaves one line's adjustment infeasible, no line should be applied — not just the
+        // one that failed — and the session must stay .inProgress, not get stuck half-applied.
+        let feasible = makeItem(name: "Beans", qty: 5)
+        let infeasible = makeItem(name: "Rice", qty: 5)
+        let session = CountSessionService.startSession(mode: .checklist, blindCount: false, items: [feasible, infeasible], context: context)
+
+        session.lines.first { $0.item === feasible }?.countedQty = 8 // +3, always feasible
+        session.lines.first { $0.item === infeasible }?.countedQty = 1 // -4 on paper
+
+        // Simulate stock moving between session start and apply (e.g. a concurrent check-out):
+        // "infeasible" now only has 2 on hand, so removing 4 to match the count can't happen.
+        try StockService.checkOut(item: infeasible, qty: 3, context: context)
+        XCTAssertEqual(infeasible.onHandTotal, 2)
+
+        XCTAssertThrowsError(try CountSessionService.apply(session, context: context)) { error in
+            XCTAssertTrue(error is CountSessionServiceError)
+        }
+
+        XCTAssertEqual(feasible.onHandTotal, 5, "the feasible line must not be applied if any other line in the session fails validation")
+        XCTAssertEqual(feasible.transactions.count, 1, "only the original check-in — no adjustment transaction leaked through")
+        XCTAssertEqual(infeasible.onHandTotal, 2, "unchanged by the failed apply")
+        XCTAssertEqual(session.status, .inProgress, "a failed apply must not advance session status")
     }
 
     func testDiscardLeavesBalancesUntouched() {

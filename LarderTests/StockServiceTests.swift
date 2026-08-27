@@ -114,4 +114,24 @@ final class StockServiceTests: XCTestCase {
         XCTAssertEqual(item.onHandTotal, 9)
         XCTAssertEqual(item.lots.count, 1)
     }
+
+    func testEditThrowsAndLeavesBalanceUntouchedWhenNewQuantityExceedsAvailableStock() throws {
+        // Regression test for the validate-then-apply fix: the old "reverse, try apply, catch and
+        // try?-restore" pattern could leave stock half-reversed if the restore itself silently
+        // failed. Editing a check-out up to a quantity the item can no longer cover must fail
+        // before mutating anything, leaving both the balance and the original transaction intact.
+        let item = makeItem()
+        StockService.checkIn(item: item, qty: 10, exp: .now, context: context)
+        let transactions = try StockService.checkOut(item: item, qty: 4, context: context)
+        let checkOut = transactions[0]
+
+        XCTAssertEqual(item.onHandTotal, 6)
+
+        XCTAssertThrowsError(try StockService.edit(checkOut, newQty: 100, newExp: checkOut.exp, context: context)) { error in
+            XCTAssertTrue(error is StockServiceError)
+        }
+
+        XCTAssertEqual(item.onHandTotal, 6, "a failed edit must not partially reverse or apply anything")
+        XCTAssertEqual(checkOut.qty, 4, "the original transaction must be untouched")
+    }
 }
