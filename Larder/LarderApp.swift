@@ -16,6 +16,11 @@ struct LarderApp: App {
             RootTabView()
                 .environment(toastCenter)
                 .overlay(ToastOverlay(message: toastCenter.message))
+                // The design system (Color.larderBackground etc.) is light-only for now;
+                // lock appearance so Form-based screens don't flip to a native dark look
+                // that clashes with the rest of the app. Revisit if real Dark Mode support
+                // gets built later.
+                .preferredColorScheme(.light)
         }
         .modelContainer(modelContainer)
     }
