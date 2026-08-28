@@ -4,6 +4,25 @@ import SwiftData
 /// F8/FR-7.1/FR-7.2: starts (or resumes) a stock-take session with Checklist or Scan sweep
 /// entry, a numeric keypad per line, and an optional blind-count mode.
 struct CountSessionView: View {
+    /// Single source of truth for "what's on screen right now," replacing three independent
+    /// `@State` optionals/booleans each backing its own `.sheet()` modifier — the structural
+    /// pattern the architecture review flagged as repeated across 5 screens. `handleScan` used to
+    /// dismiss the scanner and open the keypad sheet as two separate state mutations in the same
+    /// closure; that's now one reassignment of `activeSheet`.
+    private enum ActiveSheet: Identifiable {
+        case keypad(CountLine)
+        case scanner
+        case review
+
+        var id: String {
+            switch self {
+            case .keypad(let line): return "keypad-\(line.id)"
+            case .scanner: return "scanner"
+            case .review: return "review"
+            }
+        }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Item.name) private var allItems: [Item]
@@ -14,9 +33,7 @@ struct CountSessionView: View {
     }
 
     @State private var session: CountSession?
-    @State private var keypadLine: CountLine?
-    @State private var showScanner = false
-    @State private var showReview = false
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         NavigationStack {
@@ -83,7 +100,7 @@ struct CountSessionView: View {
                     ForEach(session.lines.sorted(by: { ($0.item?.name ?? "") < ($1.item?.name ?? "") })) { line in
                         Button {
                             if session.mode == .checklist {
-                                keypadLine = line
+                                activeSheet = .keypad(line)
                             }
                         } label: {
                             CountLineRow(line: line, blindCount: session.blindCount)
@@ -95,7 +112,7 @@ struct CountSessionView: View {
                 .safeAreaInset(edge: .bottom) {
                     VStack(spacing: 0) {
                         if session.mode == .scanSweep {
-                            PrimaryButton(title: "Scan") { showScanner = true }
+                            PrimaryButton(title: "Scan") { activeSheet = .scanner }
                                 .padding(.horizontal, 20)
                                 .padding(.top, 8)
                         }
@@ -106,7 +123,7 @@ struct CountSessionView: View {
                                 .foregroundStyle(Color.larderSecondaryText)
                             Spacer()
                             SecondaryButton(title: "Review", isEnabled: !session.countedLines.isEmpty) {
-                                showReview = true
+                                activeSheet = .review
                             }
                             .frame(width: 120)
                         }
@@ -121,17 +138,17 @@ struct CountSessionView: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .sheet(item: $keypadLine) { line in
-                CountKeypadSheet(line: line, blindCount: session.blindCount)
-            }
-            .sheet(isPresented: $showScanner) {
-                BarcodeScannerView { code in
-                    showScanner = false
-                    handleScan(code: code, session: session)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .keypad(let line):
+                    CountKeypadSheet(line: line, blindCount: session.blindCount)
+                case .scanner:
+                    BarcodeScannerView { code in
+                        handleScan(code: code, session: session)
+                    }
+                case .review:
+                    CountReviewView(session: session, onFinish: { dismiss() })
                 }
-            }
-            .sheet(isPresented: $showReview) {
-                CountReviewView(session: session, onFinish: { dismiss() })
             }
         } else {
             ProgressView()
@@ -147,11 +164,15 @@ struct CountSessionView: View {
     }
 
     private func handleScan(code: String, session: CountSession) {
-        guard let line = session.lines.first(where: { $0.item?.barcode == code }) else { return }
+        guard let line = session.lines.first(where: { $0.item?.barcode == code }) else {
+            activeSheet = nil
+            return
+        }
         if line.countedQty == nil {
             line.countedQty = line.bookQtyAtStart
+            activeSheet = nil
         } else {
-            keypadLine = line
+            activeSheet = .keypad(line)
         }
     }
 }

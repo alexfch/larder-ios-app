@@ -10,11 +10,10 @@ struct NewProductFormView: View {
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
-    var prefilledBarcode: String? = nil
-    var prefilledName: String = ""
+    private let prefilledBarcode: String?
 
-    @State private var name: String = ""
-    @State private var barcode: String = ""
+    @State private var name: String
+    @State private var barcode: String
     @State private var kind: ItemKind = .unit
     @State private var noun: String = ""
     @State private var bulkUnit: String = "g"
@@ -28,6 +27,17 @@ struct NewProductFormView: View {
 
     private enum LookupState {
         case idle, loading, found, notFound
+    }
+
+    /// Seeds `name`/`barcode` here rather than in `.onAppear`, per the architecture review:
+    /// `.onAppear`-based seeding depends on view teardown/recreation, a weaker guarantee than
+    /// `init` and a contributing factor to the barcode-prefill bug. The lookup network call
+    /// itself stays a `.task` side effect below — that's not a state-seeding concern, just work
+    /// tied to the view's lifetime.
+    init(prefilledBarcode: String? = nil, prefilledName: String = "") {
+        self.prefilledBarcode = prefilledBarcode
+        _name = State(initialValue: prefilledName)
+        _barcode = State(initialValue: prefilledBarcode ?? "")
     }
 
     var body: some View {
@@ -129,11 +139,16 @@ struct NewProductFormView: View {
                 }
             }
         }
-        .onAppear {
-            name = prefilledName
-            if let prefilledBarcode {
-                barcode = prefilledBarcode
+        .task {
+            guard let prefilledBarcode else { return }
+            // The scanner accepts QR alongside real barcode symbologies, so a "scan" can arrive
+            // as arbitrary text rather than a barcode. Skip the network call entirely for
+            // anything that doesn't look like a real barcode, and say so up front instead of
+            // leaving the field silently stuck on "no match found."
+            if BarcodeLookupService.normalizedBarcode(prefilledBarcode) != nil {
                 runLookup(for: prefilledBarcode)
+            } else {
+                barcodeError = "That doesn't look like a valid barcode — only letters, numbers, and hyphens are allowed."
             }
         }
     }
@@ -157,7 +172,17 @@ struct NewProductFormView: View {
             return
         }
 
+        var normalizedBarcode: String?
         let trimmedBarcode = barcode.trimmingCharacters(in: .whitespaces)
+        if !trimmedBarcode.isEmpty {
+            // Reject anything that doesn't look like a real barcode before it's ever persisted —
+            // a scanned QR code or hand-typed junk shouldn't silently become an item's identity.
+            guard let sanitized = BarcodeLookupService.normalizedBarcode(trimmedBarcode) else {
+                barcodeError = "That doesn't look like a valid barcode — only letters, numbers, and hyphens are allowed."
+                return
+            }
+            normalizedBarcode = sanitized
+        }
 
         // Barcode is the de facto identity scans resolve against (Check In, Check Out, and
         // Count scan-sweep all match on it) — nothing in the schema enforces uniqueness, so a
@@ -166,14 +191,14 @@ struct NewProductFormView: View {
         // architecture review's recommendation to do this as an explicit app-level check rather
         // than a SwiftData @Attribute(.unique) (whose autosave-merge behavior isn't validated
         // for this app yet).
-        if !trimmedBarcode.isEmpty, let existing = existingItem(forBarcode: trimmedBarcode) {
+        if let normalizedBarcode, let existing = existingItem(forBarcode: normalizedBarcode) {
             barcodeError = "This barcode is already used by “\(existing.name)”. Check stock in against that item instead of adding a duplicate."
             return
         }
 
         let item = Item(
             name: name,
-            barcode: trimmedBarcode.isEmpty ? nil : trimmedBarcode,
+            barcode: normalizedBarcode,
             kind: kind,
             unit: kind == .bulk ? bulkUnit : nil,
             noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil,

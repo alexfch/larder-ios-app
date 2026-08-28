@@ -3,12 +3,30 @@ import SwiftData
 
 /// F1: opens by default; lists the 5 items nearest their earliest best-before date.
 struct CheckOutHubView: View {
+    /// Single source of truth for "what's on screen right now," replacing what used to be four
+    /// independent `@State` booleans/optionals each backing its own `.sheet()` modifier. Mutating
+    /// two of those in the same synchronous closure (dismiss one sheet, present another) raced
+    /// against SwiftUI's own presentation/dismissal timing — the root cause of the barcode-prefill
+    /// bug documented in the architecture review. Reassigning one `Identifiable?` bound to one
+    /// `.sheet(item:)` makes "switch to a different sheet" a single atomic transition instead.
+    private enum ActiveSheet: Identifiable {
+        case quantity(Item)
+        case scanner
+        case manualPick
+
+        var id: String {
+            switch self {
+            case .quantity(let item): return "quantity-\(item.id)"
+            case .scanner: return "scanner"
+            case .manualPick: return "manualPick"
+            }
+        }
+    }
+
+    @Environment(ToastCenter.self) private var toastCenter
     @Query(sort: \Item.name) private var allItems: [Item]
 
-    @State private var selectedItem: Item?
-    @State private var showScanner = false
-    @State private var showManualPick = false
-    @State private var scannedUnmatchedItem: Item?
+    @State private var activeSheet: ActiveSheet?
 
     private var shortlist: [Item] {
         allItems
@@ -44,7 +62,7 @@ struct CheckOutHubView: View {
                     } else {
                         ForEach(shortlist) { item in
                             Button {
-                                selectedItem = item
+                                activeSheet = .quantity(item)
                             } label: {
                                 HubRow(item: item)
                             }
@@ -56,62 +74,34 @@ struct CheckOutHubView: View {
             }
 
             VStack(spacing: 10) {
-                PrimaryButton(title: "Scan") { showScanner = true }
-                SecondaryButton(title: "Manual") { showManualPick = true }
+                PrimaryButton(title: "Scan") { activeSheet = .scanner }
+                SecondaryButton(title: "Manual") { activeSheet = .manualPick }
             }
             .padding(20)
         }
         .background(Color.larderBackground.ignoresSafeArea())
-        .sheet(item: $selectedItem) { item in
-            QuantitySheetView(item: item, mode: .checkOut, preselectedLot: item.sortedLots.first)
-        }
-        .sheet(isPresented: $showManualPick) {
-            ManualPickListView(mode: .checkOut) { item in
-                showManualPick = false
-                selectedItem = item
-            }
-        }
-        .sheet(isPresented: $showScanner) {
-            BarcodeScannerView { code in
-                showScanner = false
-                if let match = allItems.first(where: { $0.barcode == code }) {
-                    selectedItem = match
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .quantity(let item):
+                QuantitySheetView(item: item, mode: .checkOut, preselectedLot: item.sortedLots.first)
+            case .manualPick:
+                ManualPickListView(mode: .checkOut) { item in
+                    activeSheet = .quantity(item)
+                }
+            case .scanner:
+                BarcodeScannerView { code in
+                    if let match = allItems.first(where: { $0.barcode == code }) {
+                        activeSheet = .quantity(match)
+                    } else {
+                        // Unlike Check In, there's no "add new product" path on Check Out for an
+                        // unrecognized scan — this used to be dead-end silence (the scan simply
+                        // did nothing, with a `scannedUnmatchedItem` state var declared but never
+                        // read or written). Surface it instead.
+                        activeSheet = nil
+                        toastCenter.show("No item on file for that barcode — check it in first.")
+                    }
                 }
             }
         }
-    }
-}
-
-/// Shared list row for the Check Out / Check In hub screens.
-struct HubRow: View {
-    let item: Item
-    var quantityOverride: String? = nil
-    var isHighlighted: Bool = false
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.name)
-                    .font(LarderFont.rowTitle())
-                if let earliest = item.earliestBestBefore {
-                    let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: earliest)).day ?? 0
-                    Text("best before \(earliest.formatted(.iso8601.year().month().day())) · \(relativeLabel(days))")
-                        .font(LarderFont.rowSubtitle())
-                        .foregroundStyle(Color.larderSecondaryText)
-                }
-            }
-            Spacer()
-            Text(quantityOverride ?? item.formattedQuantity(item.onHandTotal))
-                .font(LarderFont.quantityValue())
-                .foregroundStyle(isHighlighted ? Color.larderAccent : Color.larderInk)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-    }
-
-    private func relativeLabel(_ days: Int) -> String {
-        if days == 0 { return "today" }
-        if days < 0 { return "\(-days) days ago" }
-        return "in \(days) days"
     }
 }

@@ -89,19 +89,39 @@ final class StockServiceTests: XCTestCase {
         StockService.checkIn(item: item, qty: 10, exp: .now, context: context)
         let transactions = try StockService.checkOut(item: item, qty: 4, context: context)
 
-        StockService.remove(transactions[0], context: context)
+        try StockService.remove(transactions[0], context: context)
 
         XCTAssertEqual(item.onHandTotal, 10)
     }
 
-    func testRemoveCheckInRollsBackBalance() {
+    func testRemoveCheckInRollsBackBalance() throws {
         let item = makeItem()
         let transaction = StockService.checkIn(item: item, qty: 6, exp: .now, context: context)
 
-        StockService.remove(transaction, context: context)
+        try StockService.remove(transaction, context: context)
 
         XCTAssertEqual(item.onHandTotal, 0)
         XCTAssertEqual(item.lots.count, 0)
+    }
+
+    func testRemoveThrowsAndLeavesTransactionIntactWhenReversalExceedsAvailableStock() throws {
+        // Regression test for the validate-then-apply fix: reversing a check-in used to call
+        // removeFromLots via a `try?` that silently swallowed failure, so a check-in could be
+        // deleted from history while stock that had since moved elsewhere left its effect only
+        // partially undone. Removing a check-in that can no longer be fully reversed must throw
+        // before mutating anything, and the transaction must remain in history.
+        let item = makeItem()
+        let checkIn = StockService.checkIn(item: item, qty: 5, exp: .now, context: context)
+        try StockService.checkOut(item: item, qty: 3, context: context)
+
+        XCTAssertEqual(item.onHandTotal, 2)
+
+        XCTAssertThrowsError(try StockService.remove(checkIn, context: context)) { error in
+            XCTAssertTrue(error is StockServiceError)
+        }
+
+        XCTAssertEqual(item.onHandTotal, 2, "a failed remove must not partially reverse anything")
+        XCTAssertTrue(item.transactions.contains { $0.id == checkIn.id }, "the transaction must remain if it couldn't be safely removed")
     }
 
     func testEditCheckInQuantityUpdatesBalanceAtomically() throws {

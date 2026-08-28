@@ -3,16 +3,35 @@ import SwiftData
 
 /// F2/F4: lists the 5 most recent check-in movements, newest first.
 struct CheckInHubView: View {
+    /// Single source of truth for "what's on screen right now," replacing what used to be six
+    /// independent `@State` booleans/optionals each backing its own `.sheet()` modifier. This is
+    /// the screen where the barcode-prefill bug was first observed: dismissing the scanner sheet
+    /// and presenting the New Product sheet were two separate state mutations in the same
+    /// synchronous closure, racing against SwiftUI's own presentation timing and against
+    /// `NewProductFormView`'s old `.onAppear`-based prop capture. Reassigning one `Identifiable?`
+    /// bound to one `.sheet(item:)` makes "switch to a different sheet" a single atomic transition.
+    private enum ActiveSheet: Identifiable {
+        case itemDetail(Item)
+        case quantity(Item)
+        case scanner
+        case manualPick
+        case newProduct(barcode: String?, name: String)
+
+        var id: String {
+            switch self {
+            case .itemDetail(let item): return "itemDetail-\(item.id)"
+            case .quantity(let item): return "quantity-\(item.id)"
+            case .scanner: return "scanner"
+            case .manualPick: return "manualPick"
+            case .newProduct(let barcode, let name): return "newProduct-\(barcode ?? "")-\(name)"
+            }
+        }
+    }
+
     @Query(sort: \Transaction.occurredAt, order: .reverse) private var allTransactions: [Transaction]
     @Query(sort: \Item.name) private var allItems: [Item]
 
-    @State private var selectedItemForDetail: Item?
-    @State private var scanQuantityItem: Item?
-    @State private var showScanner = false
-    @State private var showManualPick = false
-    @State private var newProductBarcode: String?
-    @State private var newProductName: String = ""
-    @State private var showNewProduct = false
+    @State private var activeSheet: ActiveSheet?
 
     private var recentCheckIns: [Transaction] {
         allTransactions.filter { $0.action == .checkIn }.prefix(5).map { $0 }
@@ -44,7 +63,9 @@ struct CheckInHubView: View {
                     } else {
                         ForEach(recentCheckIns) { transaction in
                             Button {
-                                selectedItemForDetail = transaction.item
+                                if let item = transaction.item {
+                                    activeSheet = .itemDetail(item)
+                                }
                             } label: {
                                 RecentCheckInRow(transaction: transaction)
                             }
@@ -56,43 +77,35 @@ struct CheckInHubView: View {
             }
 
             VStack(spacing: 10) {
-                PrimaryButton(title: "Scan") { showScanner = true }
-                SecondaryButton(title: "Manual") { showManualPick = true }
+                PrimaryButton(title: "Scan") { activeSheet = .scanner }
+                SecondaryButton(title: "Manual") { activeSheet = .manualPick }
             }
             .padding(20)
         }
         .background(Color.larderBackground.ignoresSafeArea())
-        .sheet(item: $selectedItemForDetail) { item in
-            NavigationStack { ItemDetailView(item: item) }
-        }
-        .sheet(item: $scanQuantityItem) { item in
-            QuantitySheetView(item: item, mode: .checkIn)
-        }
-        .sheet(isPresented: $showManualPick) {
-            ManualPickListView(mode: .checkIn) { item in
-                showManualPick = false
-                scanQuantityItem = item
-            } onAddNewProduct: { typedName in
-                showManualPick = false
-                newProductBarcode = nil
-                newProductName = typedName
-                showNewProduct = true
-            }
-        }
-        .sheet(isPresented: $showScanner) {
-            BarcodeScannerView { code in
-                showScanner = false
-                if let match = allItems.first(where: { $0.barcode == code }) {
-                    scanQuantityItem = match
-                } else {
-                    newProductBarcode = code
-                    newProductName = ""
-                    showNewProduct = true
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .itemDetail(let item):
+                NavigationStack { ItemDetailView(item: item) }
+            case .quantity(let item):
+                QuantitySheetView(item: item, mode: .checkIn)
+            case .manualPick:
+                ManualPickListView(mode: .checkIn) { item in
+                    activeSheet = .quantity(item)
+                } onAddNewProduct: { typedName in
+                    activeSheet = .newProduct(barcode: nil, name: typedName)
                 }
+            case .scanner:
+                BarcodeScannerView { code in
+                    if let match = allItems.first(where: { $0.barcode == code }) {
+                        activeSheet = .quantity(match)
+                    } else {
+                        activeSheet = .newProduct(barcode: code, name: "")
+                    }
+                }
+            case .newProduct(let barcode, let name):
+                NewProductFormView(prefilledBarcode: barcode, prefilledName: name)
             }
-        }
-        .sheet(isPresented: $showNewProduct) {
-            NewProductFormView(prefilledBarcode: newProductBarcode, prefilledName: newProductName)
         }
     }
 }

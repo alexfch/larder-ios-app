@@ -4,12 +4,26 @@ import SwiftData
 /// FR-5.1: every item, sorted soonest-expiring first (no-batch items last), with search and
 /// an "Expiring ≤ 14 days" filter. Hosts the entry point into a stock-take (FR-7.1).
 struct StockListView: View {
+    /// Single source of truth for "what's on screen right now," replacing two independent
+    /// `@State` optionals/booleans each backing its own `.sheet()` modifier — the structural
+    /// pattern the architecture review flagged as repeated across 5 screens.
+    private enum ActiveSheet: Identifiable {
+        case itemDetail(Item)
+        case countSession
+
+        var id: String {
+            switch self {
+            case .itemDetail(let item): return "itemDetail-\(item.id)"
+            case .countSession: return "countSession"
+            }
+        }
+    }
+
     @Query private var allItems: [Item]
 
     @State private var searchText = ""
     @State private var expiringOnly = false
-    @State private var selectedItem: Item?
-    @State private var showCountSession = false
+    @State private var activeSheet: ActiveSheet?
 
     private var expiringSoonCount: Int {
         allItems.filter { item in item.sortedLots.contains { $0.isExpiringSoon } }.count
@@ -37,7 +51,7 @@ struct StockListView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(eyebrow: "In the pantry", title: "Stock") {
-                SecondaryButton(title: "Count") { showCountSession = true }
+                SecondaryButton(title: "Count") { activeSheet = .countSession }
                     .frame(width: 96)
             }
 
@@ -75,7 +89,7 @@ struct StockListView: View {
                     VStack(spacing: 0) {
                         ForEach(visibleItems) { item in
                             Button {
-                                selectedItem = item
+                                activeSheet = .itemDetail(item)
                             } label: {
                                 StockRow(item: item)
                             }
@@ -87,11 +101,13 @@ struct StockListView: View {
             }
         }
         .background(Color.larderBackground.ignoresSafeArea())
-        .sheet(item: $selectedItem) { item in
-            NavigationStack { ItemDetailView(item: item) }
-        }
-        .sheet(isPresented: $showCountSession) {
-            CountSessionView()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .itemDetail(let item):
+                NavigationStack { ItemDetailView(item: item) }
+            case .countSession:
+                CountSessionView()
+            }
         }
     }
 }

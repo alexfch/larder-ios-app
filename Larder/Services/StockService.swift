@@ -91,17 +91,36 @@ enum StockService {
         }
 
         try context.transaction {
-            reverseEffect(of: transaction, context: context)
+            try reverseEffect(of: transaction, context: context)
             try applyEffect(item: item, action: originalAction, qty: newQty, exp: normalizedNewExp, context: context)
             transaction.qty = newQty
             transaction.exp = normalizedNewExp
         }
     }
 
-    static func remove(_ transaction: Transaction, context: ModelContext) {
-        reverseEffect(of: transaction, context: context)
-        transaction.item?.transactions.removeAll { $0.id == transaction.id }
-        context.delete(transaction)
+    /// Same validate-then-apply shape as `edit`: reversing a `.checkIn` or a positive `.adjust`
+    /// calls into `removeFromLots`, which can throw if stock has moved since the transaction was
+    /// recorded (e.g. some of it was already checked out elsewhere). That used to be swallowed by
+    /// a `try?` inside `reverseEffect`, silently leaving the transaction deleted from history
+    /// while its effect on the lots was only partially undone — the balance and the history would
+    /// permanently disagree with no error surfaced anywhere. Instead, prove the reversal is
+    /// feasible via pure arithmetic against the item's current on-hand total before touching any
+    /// lot, then perform the reversal and the deletion inside one `context.transaction`.
+    static func remove(_ transaction: Transaction, context: ModelContext) throws {
+        guard let item = transaction.item else {
+            context.delete(transaction)
+            return
+        }
+
+        guard canReverse(transaction, currentTotal: item.onHandTotal) else {
+            throw StockServiceError.insufficientStock
+        }
+
+        try context.transaction {
+            try reverseEffect(of: transaction, context: context)
+            item.transactions.removeAll { $0.id == transaction.id }
+            context.delete(transaction)
+        }
     }
 
     // MARK: Stock-take adjustments (FR-7.3)
@@ -157,16 +176,16 @@ enum StockService {
         return reversalEffect >= 0 || currentTotal >= -reversalEffect
     }
 
-    private static func reverseEffect(of transaction: Transaction, context: ModelContext) {
+    private static func reverseEffect(of transaction: Transaction, context: ModelContext) throws {
         guard let item = transaction.item else { return }
         switch transaction.action {
         case .checkIn:
-            try? removeFromLots(item: item, exp: transaction.exp, qty: transaction.qty, context: context)
+            try removeFromLots(item: item, exp: transaction.exp, qty: transaction.qty, context: context)
         case .checkOut:
             addToLot(item: item, exp: transaction.exp, qty: transaction.qty, context: context)
         case .adjust:
             if transaction.qty >= 0 {
-                try? removeFromLots(item: item, exp: transaction.exp, qty: transaction.qty, context: context)
+                try removeFromLots(item: item, exp: transaction.exp, qty: transaction.qty, context: context)
             } else {
                 addToLot(item: item, exp: transaction.exp, qty: -transaction.qty, context: context)
             }

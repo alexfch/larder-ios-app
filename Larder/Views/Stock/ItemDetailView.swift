@@ -7,11 +7,27 @@ struct ItemDetailView: View {
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
+    /// Single source of truth for "what's on screen right now," replacing three independent
+    /// `@State` booleans/optionals each backing its own `.sheet()` modifier — the structural
+    /// pattern the architecture review flagged as repeated across 5 screens. See `CheckInHubView`
+    /// for where mutating two of those in the same closure actually caused a bug.
+    private enum ActiveSheet: Identifiable {
+        case checkOut
+        case checkIn
+        case editTransaction(Transaction)
+
+        var id: String {
+            switch self {
+            case .checkOut: return "checkOut"
+            case .checkIn: return "checkIn"
+            case .editTransaction(let transaction): return "edit-\(transaction.id)"
+            }
+        }
+    }
+
     let item: Item
 
-    @State private var checkInPresented = false
-    @State private var checkOutPresented = false
-    @State private var editingTransaction: Transaction?
+    @State private var activeSheet: ActiveSheet?
 
     private var earliestDays: Int? {
         guard let earliest = item.earliestBestBefore else { return nil }
@@ -85,7 +101,7 @@ struct ItemDetailView: View {
                                         Label("Remove", systemImage: "trash")
                                     }
                                     Button {
-                                        editingTransaction = transaction
+                                        activeSheet = .editTransaction(transaction)
                                     } label: {
                                         Label("Edit", systemImage: "pencil")
                                     }
@@ -106,8 +122,8 @@ struct ItemDetailView: View {
             .listStyle(.plain)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
-                    PrimaryButton(title: "Check Out") { checkOutPresented = true }
-                    SecondaryButton(title: "Check In") { checkInPresented = true }
+                    PrimaryButton(title: "Check Out") { activeSheet = .checkOut }
+                    SecondaryButton(title: "Check In") { activeSheet = .checkIn }
                 }
                 .padding(20)
                 .background(Color.larderBackground)
@@ -115,14 +131,15 @@ struct ItemDetailView: View {
         }
         .background(Color.larderBackground.ignoresSafeArea())
         .overlay(ToastOverlay(message: toastCenter.message))
-        .sheet(isPresented: $checkOutPresented) {
-            QuantitySheetView(item: item, mode: .checkOut, preselectedLot: item.sortedLots.first)
-        }
-        .sheet(isPresented: $checkInPresented) {
-            QuantitySheetView(item: item, mode: .checkIn)
-        }
-        .sheet(item: $editingTransaction) { transaction in
-            EditTransactionSheet(item: item, transaction: transaction)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .checkOut:
+                QuantitySheetView(item: item, mode: .checkOut, preselectedLot: item.sortedLots.first)
+            case .checkIn:
+                QuantitySheetView(item: item, mode: .checkIn)
+            case .editTransaction(let transaction):
+                EditTransactionSheet(item: item, transaction: transaction)
+            }
         }
     }
 
@@ -145,8 +162,12 @@ struct ItemDetailView: View {
     }
 
     private func removeTransaction(_ transaction: Transaction) {
-        StockService.remove(transaction, context: context)
-        toastCenter.show("Movement removed — balance rolled back")
+        do {
+            try StockService.remove(transaction, context: context)
+            toastCenter.show("Movement removed — balance rolled back")
+        } catch {
+            toastCenter.show(error.localizedDescription)
+        }
     }
 }
 
