@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 import UIKit
+import AVFoundation
 
 /// FR-3.1/FR-3.2: captures name, barcode (optional), unit/bulk kind, quantity, expiry, and an
 /// optional photo. Saving performs the item's initial check-in.
@@ -21,9 +22,25 @@ struct NewProductFormView: View {
     @State private var expDate: Date = Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
+    @State private var showCamera = false
     @State private var nameError = false
     @State private var barcodeError: String?
     @State private var lookupState: LookupState = .idle
+
+    /// Every real iPhone/iPad has a camera, so this only needs to rule out the Simulator (which
+    /// has none) — checked at compile time, not via `AVCaptureDevice.default(for:)` at runtime.
+    /// That runtime check used to gate this option, but it can behave unreliably depending on the
+    /// camera permission state (e.g. after the user has previously denied access), which hid the
+    /// option on real hardware instead of just showing it and handling denial explicitly once the
+    /// user actually taps it — the same "guide to Settings" pattern used elsewhere for permission
+    /// denial, not a silent disappearance.
+    private var cameraAvailable: Bool {
+        #if targetEnvironment(simulator)
+        false
+        #else
+        true
+        #endif
+    }
 
     private enum LookupState {
         case idle, loading, found, notFound
@@ -111,7 +128,18 @@ struct NewProductFormView: View {
                 }
 
                 Section("Photo") {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
+                    Menu {
+                        if cameraAvailable {
+                            Button {
+                                showCamera = true
+                            } label: {
+                                Label("Take Photo", systemImage: "camera")
+                            }
+                        }
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            Label("Choose from Library", systemImage: "photo.on.rectangle")
+                        }
+                    } label: {
                         HStack {
                             if let photoData, let uiImage = UIImage(data: photoData) {
                                 Image(uiImage: uiImage)
@@ -154,6 +182,14 @@ struct NewProductFormView: View {
                 runLookup(for: prefilledBarcode)
             } else {
                 barcodeError = "That doesn't look like a valid barcode — only letters, numbers, and hyphens are allowed."
+            }
+        }
+        .sheet(isPresented: $showCamera) {
+            ProductCameraCaptureView { data in
+                Task {
+                    // Same downsample-before-storing treatment as a library photo.
+                    photoData = await ImageDownsampling.downsample(data) ?? data
+                }
             }
         }
     }

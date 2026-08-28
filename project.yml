@@ -34,7 +34,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.bolzhelarskyi.larder
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
-        INFOPLIST_KEY_NSCameraUsageDescription: "Larder uses the camera to scan product barcodes when checking items in or out."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Larder uses the camera to scan product barcodes and to take photos of products you add."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Larder uses your photo library so you can attach a picture to a product."
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: "YES"
