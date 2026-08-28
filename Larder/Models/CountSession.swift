@@ -33,6 +33,14 @@ final class CountSession {
         "INV-\(sessionNumber)"
     }
 
+    /// Lines in catalog-name order — moved here from an inline `.sorted(by:)` inside
+    /// `CountSessionView`'s render body per the architecture review, matching the existing
+    /// `Item.sortedLots`/`sortedTransactions` convention of keeping this kind of derived ordering
+    /// on the model rather than recomputed inline in a view.
+    var sortedLines: [CountLine] {
+        lines.sorted { ($0.item?.name ?? "") < ($1.item?.name ?? "") }
+    }
+
     var countedLines: [CountLine] {
         lines.filter { $0.countedQty != nil }
     }

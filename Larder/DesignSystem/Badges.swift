@@ -22,18 +22,11 @@ struct OutlineTag: View {
 /// Filled tag used for expiry dates, e.g. "2026-09-01 · in 7 days".
 struct ExpiryBadge: View {
     let date: Date
-    let daysUntil: Int
 
-    private var relativeLabel: String {
-        if daysUntil == 0 { return "today" }
-        if daysUntil < 0 { return "\(-daysUntil) days ago" }
-        return "in \(daysUntil) days"
-    }
-
-    private var isSoon: Bool { daysUntil <= 14 }
+    private var isSoon: Bool { date.daysFromToday <= 14 }
 
     var body: some View {
-        Text("\(date.formatted(.iso8601.year().month().day())) · \(relativeLabel)")
+        Text("\(date.formatted(.iso8601.year().month().day())) · \(date.relativeDayLabel)")
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(isSoon ? Color.larderAccent : Color.larderSecondaryText)
             .padding(.horizontal, 8)

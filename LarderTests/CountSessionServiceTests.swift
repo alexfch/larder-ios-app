@@ -19,11 +19,11 @@ final class CountSessionServiceTests: XCTestCase {
         return item
     }
 
-    func testStartSessionSnapshotsBookQuantityForEveryItem() {
+    func testStartSessionSnapshotsBookQuantityForEveryItem() async {
         let a = makeItem(name: "Beans", qty: 5)
         let b = makeItem(name: "Rice", qty: 2)
 
-        let session = CountSessionService.startSession(mode: .checklist, blindCount: false, items: [a, b], context: context)
+        let session = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: [a, b], context: context)
 
         XCTAssertEqual(session.lines.count, 2)
         XCTAssertEqual(session.lines.first { $0.item === a }?.bookQtyAtStart, 5)
@@ -31,10 +31,10 @@ final class CountSessionServiceTests: XCTestCase {
         XCTAssertEqual(session.status, .inProgress)
     }
 
-    func testApplyWritesSignedAdjustmentOnlyForDifferingLines() throws {
+    func testApplyWritesSignedAdjustmentOnlyForDifferingLines() async throws {
         let a = makeItem(name: "Beans", qty: 5)
         let b = makeItem(name: "Rice", qty: 2)
-        let session = CountSessionService.startSession(mode: .checklist, blindCount: false, items: [a, b], context: context)
+        let session = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: [a, b], context: context)
 
         session.lines.first { $0.item === a }?.countedQty = 5
         session.lines.first { $0.item === b }?.countedQty = 6
@@ -49,14 +49,14 @@ final class CountSessionServiceTests: XCTestCase {
         XCTAssertEqual(session.status, .applied)
     }
 
-    func testApplyIsAllOrNothingWhenOneLineBecomesInfeasible() throws {
+    func testApplyIsAllOrNothingWhenOneLineBecomesInfeasible() async throws {
         // Regression test for the validate-then-apply fix: a session snapshots book quantity at
         // start, but stock can change before apply (e.g. a check-out elsewhere in the app). If
         // that leaves one line's adjustment infeasible, no line should be applied — not just the
         // one that failed — and the session must stay .inProgress, not get stuck half-applied.
         let feasible = makeItem(name: "Beans", qty: 5)
         let infeasible = makeItem(name: "Rice", qty: 5)
-        let session = CountSessionService.startSession(mode: .checklist, blindCount: false, items: [feasible, infeasible], context: context)
+        let session = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: [feasible, infeasible], context: context)
 
         session.lines.first { $0.item === feasible }?.countedQty = 8 // +3, always feasible
         session.lines.first { $0.item === infeasible }?.countedQty = 1 // -4 on paper
@@ -76,9 +76,9 @@ final class CountSessionServiceTests: XCTestCase {
         XCTAssertEqual(session.status, .inProgress, "a failed apply must not advance session status")
     }
 
-    func testDiscardLeavesBalancesUntouched() {
+    func testDiscardLeavesBalancesUntouched() async {
         let a = makeItem(name: "Beans", qty: 5)
-        let session = CountSessionService.startSession(mode: .checklist, blindCount: false, items: [a], context: context)
+        let session = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: [a], context: context)
         session.lines.first?.countedQty = 1
 
         CountSessionService.discard(session)

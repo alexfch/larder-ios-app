@@ -84,6 +84,19 @@ final class Item {
         }
     }
 
+    /// Single source of truth for barcode → catalog-item lookup. The architecture review flagged
+    /// this as reimplemented independently at every scan site (Check In, Check Out, Count scan
+    /// sweep, and the New Product duplicate-guard) — each as `allItems.first(where: { $0.barcode
+    /// == code })`, a linear scan through a `@Query` that had to load the *entire* catalog into
+    /// memory just to filter it in Swift. A predicate-backed `FetchDescriptor` with `fetchLimit =
+    /// 1` lets SwiftData's store do the filtering instead, so a match costs one lookup regardless
+    /// of catalog size, and the callers no longer need an unscoped `@Query` just for this.
+    static func match(barcode: String, in context: ModelContext) -> Item? {
+        var descriptor = FetchDescriptor<Item>(predicate: #Predicate { $0.barcode == barcode })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
     private static func pluralize(_ word: String) -> String {
         guard let last = word.last else { return word }
         if "sxz".contains(last) || word.hasSuffix("ch") || word.hasSuffix("sh") {

@@ -17,6 +17,18 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Larder
+    preBuildScripts:
+      - name: SwiftLint
+        basedOnDependencyAnalysis: false
+        script: |
+          # Report-only for now (never fails the build): this is a solo-developer project with
+          # no CI yet, and `swiftlint` isn't a hard dependency — see .swiftlint.yml. The baseline
+          # suppresses violations that existed at adoption time so only new ones surface here.
+          if command -v swiftlint >/dev/null 2>&1; then
+            swiftlint lint --config "${SRCROOT}/.swiftlint.yml" --baseline "${SRCROOT}/.swiftlint.baseline" || true
+          else
+            echo "warning: SwiftLint not installed — run 'brew install swiftlint' to lint on build (see .swiftlint.yml)"
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bolzhelarskyi.larder

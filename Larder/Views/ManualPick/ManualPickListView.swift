@@ -6,25 +6,13 @@ import SwiftData
 /// is always available, and a no-match search prompts adding the typed text as a new product.
 struct ManualPickListView: View {
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Item.name) private var allItems: [Item]
 
     let mode: QuantitySheetMode
     let onSelect: (Item) -> Void
     var onAddNewProduct: ((String) -> Void)? = nil
 
     @State private var searchText = ""
-
-    private var searchableItems: [Item] {
-        mode == .checkOut ? allItems.filter { $0.onHandTotal > 0 } : allItems
-    }
-
-    private var filteredItems: [Item] {
-        guard searchText.count >= 1 else { return searchableItems }
-        let lower = searchText.lowercased()
-        return searchableItems.filter {
-            $0.name.lowercased().contains(lower) || ($0.barcode?.contains(searchText) ?? false)
-        }
-    }
+    @State private var debouncedSearchText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,37 +49,106 @@ struct ManualPickListView: View {
                 Divider().overlay(Color.larderDivider)
             }
 
-            if filteredItems.isEmpty {
-                VStack(spacing: 12) {
-                    Text(mode == .checkIn ? "No matches. Add \"\(searchText)\" as a new product?" : "No matching items on hand.")
-                        .foregroundStyle(Color.larderSecondaryText)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                    if mode == .checkIn, !searchText.isEmpty, let onAddNewProduct {
-                        SecondaryButton(title: "Add New Product") {
-                            onAddNewProduct(searchText)
-                        }
-                        .padding(.horizontal, 40)
+            // searchText here is the live typed value (for "Add new product" and the empty-state
+            // message text); the results view below queries against the debounced value.
+            ManualPickResultsView(
+                mode: mode,
+                debouncedSearchText: debouncedSearchText,
+                liveSearchText: searchText,
+                onSelect: onSelect,
+                onAddNewProduct: onAddNewProduct
+            )
+        }
+        .background(Color.larderBackground.ignoresSafeArea())
+        .task(id: searchText) {
+            // Debounce: at catalog scale, reconstructing the results view's @Query on every
+            // keystroke is real, avoidable work. `.task(id:)` cancels the previous sleep
+            // automatically when `searchText` changes again before it elapses, so only a pause
+            // in typing actually commits a new search.
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            debouncedSearchText = searchText
+        }
+    }
+}
+
+/// Owns the actual result set. `debouncedSearchText` (once non-empty) scopes this view's own
+/// `@Query` to a name/barcode predicate — narrowing the *fetch* at the SwiftData layer instead of
+/// loading the whole catalog into memory just to filter it in Swift, per the architecture
+/// review's "unfiltered @Query" finding. `liveSearchText` is only for display text (the "Add new
+/// product" prompt), so it doesn't need to wait for the debounce.
+private struct ManualPickResultsView: View {
+    @Query private var items: [Item]
+    let mode: QuantitySheetMode
+    let liveSearchText: String
+    let onSelect: (Item) -> Void
+    let onAddNewProduct: ((String) -> Void)?
+
+    init(
+        mode: QuantitySheetMode,
+        debouncedSearchText: String,
+        liveSearchText: String,
+        onSelect: @escaping (Item) -> Void,
+        onAddNewProduct: ((String) -> Void)?
+    ) {
+        self.mode = mode
+        self.liveSearchText = liveSearchText
+        self.onSelect = onSelect
+        self.onAddNewProduct = onAddNewProduct
+
+        let descriptor: FetchDescriptor<Item>
+        if debouncedSearchText.count >= 1 {
+            descriptor = FetchDescriptor<Item>(
+                predicate: #Predicate<Item> { item in
+                    item.name.localizedStandardContains(debouncedSearchText)
+                        || (item.barcode?.localizedStandardContains(debouncedSearchText) ?? false)
+                },
+                sortBy: [SortDescriptor(\.name)]
+            )
+        } else {
+            descriptor = FetchDescriptor<Item>(sortBy: [SortDescriptor(\.name)])
+        }
+        _items = Query(descriptor)
+    }
+
+    /// `onHandTotal` is computed from the `lots` relationship rather than a stored attribute, so
+    /// the check-out "only items with stock on hand" rule can't be expressed in the fetch
+    /// predicate above — it's a Swift-side filter over whatever the (already search-scoped) query
+    /// returned.
+    private var filteredItems: [Item] {
+        mode == .checkOut ? items.filter { $0.onHandTotal > 0 } : items
+    }
+
+    var body: some View {
+        if filteredItems.isEmpty {
+            VStack(spacing: 12) {
+                Text(mode == .checkIn ? "No matches. Add \"\(liveSearchText)\" as a new product?" : "No matching items on hand.")
+                    .foregroundStyle(Color.larderSecondaryText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                if mode == .checkIn, !liveSearchText.isEmpty, let onAddNewProduct {
+                    SecondaryButton(title: "Add New Product") {
+                        onAddNewProduct(liveSearchText)
                     }
+                    .padding(.horizontal, 40)
                 }
-                .padding(.top, 40)
-                Spacer()
-            } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(filteredItems) { item in
-                            Button {
-                                onSelect(item)
-                            } label: {
-                                HubRow(item: item)
-                            }
-                            .buttonStyle(.plain)
-                            Divider().overlay(Color.larderDivider)
+            }
+            .padding(.top, 40)
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(filteredItems) { item in
+                        Button {
+                            onSelect(item)
+                        } label: {
+                            HubRow(item: item)
                         }
+                        .buttonStyle(.plain)
+                        Divider().overlay(Color.larderDivider)
                     }
                 }
             }
         }
-        .background(Color.larderBackground.ignoresSafeArea())
     }
 }

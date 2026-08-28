@@ -29,11 +29,6 @@ struct ItemDetailView: View {
 
     @State private var activeSheet: ActiveSheet?
 
-    private var earliestDays: Int? {
-        guard let earliest = item.earliestBestBefore else { return nil }
-        return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: earliest)).day
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
@@ -52,8 +47,8 @@ struct ItemDetailView: View {
             HStack(spacing: 0) {
                 statBlock(value: item.formattedQuantity(item.onHandTotal), label: "On Hand")
                 Divider().frame(height: 60).overlay(Color.larderDivider)
-                if let earliest = item.earliestBestBefore, let days = earliestDays {
-                    statBlock(value: "\(earliest.formatted(.iso8601.year().month().day())) (\(relativeLabel(days)))", label: "Earliest Best Before")
+                if let earliest = item.earliestBestBefore {
+                    statBlock(value: "\(earliest.formatted(.iso8601.year().month().day())) (\(earliest.relativeDayLabel))", label: "Earliest Best Before")
                 } else {
                     statBlock(value: "—", label: "Earliest Best Before")
                 }
@@ -76,7 +71,7 @@ struct ItemDetailView: View {
                                     .font(LarderFont.rowTitle())
                                 Spacer()
                                 Text(lot.exp.formatted(.iso8601.year().month().day()))
-                                Text(relativeLabel(lot.daysUntilExpiry))
+                                Text(lot.exp.relativeDayLabel)
                                     .foregroundStyle(Color.larderSecondaryText)
                             }
                             .font(.system(size: 15))
@@ -153,12 +148,6 @@ struct ItemDetailView: View {
                 .foregroundStyle(Color.larderSecondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func relativeLabel(_ days: Int) -> String {
-        if days == 0 { return "today" }
-        if days < 0 { return "\(-days) days ago" }
-        return "in \(days) days"
     }
 
     private func removeTransaction(_ transaction: Transaction) {

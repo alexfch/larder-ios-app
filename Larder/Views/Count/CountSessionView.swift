@@ -25,7 +25,10 @@ struct CountSessionView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Item.name) private var allItems: [Item]
+    /// Starting a session snapshots `item.onHandTotal` — a `lots`-relationship read — for every
+    /// item in the catalog. Prefetching `lots` for the whole batch in one round trip avoids
+    /// lazily faulting each item's lots one at a time while `startSession` builds the count lines.
+    @Query(CountSessionView.candidatesDescriptor) private var allItems: [Item]
     @Query private var allSessions: [CountSession]
 
     private var inProgressSessions: [CountSession] {
@@ -35,11 +38,19 @@ struct CountSessionView: View {
     @State private var session: CountSession?
     @State private var activeSheet: ActiveSheet?
 
+    private static var candidatesDescriptor: FetchDescriptor<Item> {
+        var descriptor = FetchDescriptor<Item>(sortBy: [SortDescriptor(\.name)])
+        descriptor.relationshipKeyPathsForPrefetching = [\.lots]
+        return descriptor
+    }
+
     var body: some View {
         NavigationStack {
             content
         }
-        .onAppear(perform: ensureSession)
+        .task {
+            await ensureSession()
+        }
     }
 
     @ViewBuilder
@@ -97,7 +108,7 @@ struct CountSessionView: View {
                 Divider().overlay(Color.larderDivider)
 
                 List {
-                    ForEach(session.lines.sorted(by: { ($0.item?.name ?? "") < ($1.item?.name ?? "") })) { line in
+                    ForEach(session.sortedLines) { line in
                         Button {
                             if session.mode == .checklist {
                                 activeSheet = .keypad(line)
@@ -155,16 +166,20 @@ struct CountSessionView: View {
         }
     }
 
-    private func ensureSession() {
+    private func ensureSession() async {
         if let existing = inProgressSessions.first {
             session = existing
         } else {
-            session = CountSessionService.startSession(mode: .checklist, blindCount: false, items: allItems, context: context)
+            session = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: allItems, context: context)
         }
     }
 
     private func handleScan(code: String, session: CountSession) {
-        guard let line = session.lines.first(where: { $0.item?.barcode == code }) else {
+        // Resolve the barcode against the catalog first, via the shared, indexed lookup — not a
+        // scan through `session.lines`' `item?.barcode`, which was the same reimplemented-linear-
+        // scan pattern the architecture review flagged at every other scan site.
+        guard let item = Item.match(barcode: code, in: context),
+              let line = session.lines.first(where: { $0.item?.id == item.id }) else {
             activeSheet = nil
             return
         }

@@ -16,7 +16,7 @@ final class Lot {
     }
 
     var daysUntilExpiry: Int {
-        Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: exp)).day ?? 0
+        exp.daysFromToday
     }
 
     var isExpiringSoon: Bool {

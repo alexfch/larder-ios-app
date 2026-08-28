@@ -28,8 +28,8 @@ struct CheckInHubView: View {
         }
     }
 
+    @Environment(\.modelContext) private var context
     @Query(sort: \Transaction.occurredAt, order: .reverse) private var allTransactions: [Transaction]
-    @Query(sort: \Item.name) private var allItems: [Item]
 
     @State private var activeSheet: ActiveSheet?
 
@@ -48,7 +48,7 @@ struct CheckInHubView: View {
             Divider().overlay(Color.larderDivider)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Recently checked in")
                         .trackedUppercase()
                         .font(LarderFont.eyebrow())
@@ -97,7 +97,7 @@ struct CheckInHubView: View {
                 }
             case .scanner:
                 BarcodeScannerView { code in
-                    if let match = allItems.first(where: { $0.barcode == code }) {
+                    if let match = Item.match(barcode: code, in: context) {
                         activeSheet = .quantity(match)
                     } else {
                         activeSheet = .newProduct(barcode: code, name: "")

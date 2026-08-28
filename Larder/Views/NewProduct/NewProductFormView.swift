@@ -191,7 +191,7 @@ struct NewProductFormView: View {
         // architecture review's recommendation to do this as an explicit app-level check rather
         // than a SwiftData @Attribute(.unique) (whose autosave-merge behavior isn't validated
         // for this app yet).
-        if let normalizedBarcode, let existing = existingItem(forBarcode: normalizedBarcode) {
+        if let normalizedBarcode, let existing = Item.match(barcode: normalizedBarcode, in: context) {
             barcodeError = "This barcode is already used by “\(existing.name)”. Check stock in against that item instead of adding a duplicate."
             return
         }
@@ -208,11 +208,5 @@ struct NewProductFormView: View {
         StockService.checkIn(item: item, qty: quantity, exp: expDate, context: context)
         toastCenter.show("\(item.name) added to Stock")
         dismiss()
-    }
-
-    private func existingItem(forBarcode code: String) -> Item? {
-        var descriptor = FetchDescriptor<Item>(predicate: #Predicate { $0.barcode == code })
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
     }
 }

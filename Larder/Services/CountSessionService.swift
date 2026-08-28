@@ -18,7 +18,23 @@ enum CountSessionService {
 
     private static let nextSessionNumberKey = "larder.nextCountSessionNumber"
 
-    static func startSession(mode: CountMode, blindCount: Bool, items: [Item], context: ModelContext) -> CountSession {
+    /// Creates one `CountLine` per catalog item, yielding periodically so this doesn't block the
+    /// main thread for one long, unresponsive stretch at catalog scale. `ModelContext` isn't
+    /// `Sendable` and is bound to whichever actor created it — here, the view hierarchy's
+    /// main-actor context — so this can't move to a `@ModelActor` background actor the way other
+    /// SwiftData background work normally would; the writes have to stay on the main actor
+    /// either way. Making the loop cooperative (instead of one uninterrupted synchronous pass)
+    /// is what's actually achievable here: SwiftUI can still process input and render — e.g. the
+    /// caller's `ProgressView` — between chunks instead of freezing until the whole loop finishes.
+    ///
+    /// Note this does NOT append each line to `session.lines` manually: `CountLine.init(session:)`
+    /// already sets that side of the relationship, and `CountSession.lines`'s declared
+    /// `inverse: \CountLine.session` means SwiftData mirrors it automatically. The redundant
+    /// manual append that used to be here was the dominant cost at catalog scale — repeatedly
+    /// appending to a large SwiftData-managed to-many relationship array turned out to be far
+    /// more expensive than the equivalent work already happening implicitly via the inverse.
+    @MainActor
+    static func startSession(mode: CountMode, blindCount: Bool, items: [Item], context: ModelContext) async -> CountSession {
         let defaults = UserDefaults.standard
         let number = defaults.integer(forKey: nextSessionNumberKey)
         let sessionNumber = number == 0 ? 501 : number
@@ -27,10 +43,13 @@ enum CountSessionService {
         let session = CountSession(sessionNumber: sessionNumber, mode: mode, blindCount: blindCount)
         context.insert(session)
 
-        for item in items {
+        for (index, item) in items.enumerated() {
             let line = CountLine(session: session, item: item, bookQtyAtStart: item.onHandTotal)
             context.insert(line)
-            session.lines.append(line)
+
+            if index % 200 == 199 {
+                await Task.yield()
+            }
         }
 
         return session

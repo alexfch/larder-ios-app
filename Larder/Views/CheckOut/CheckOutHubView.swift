@@ -23,10 +23,23 @@ struct CheckOutHubView: View {
         }
     }
 
+    @Environment(\.modelContext) private var context
     @Environment(ToastCenter.self) private var toastCenter
-    @Query(sort: \Item.name) private var allItems: [Item]
+    /// Finding the 5 nearest-expiry items means sorting by `earliestBestBefore`, a value computed
+    /// from the `lots` relationship rather than a stored attribute — SwiftData can't express that
+    /// as a `SortDescriptor`, so this still has to inspect every item in Swift. What a scoped
+    /// `FetchDescriptor` *can* do is prefetch `lots` for the whole batch in one round trip instead
+    /// of lazily faulting each item's lots one at a time as `.onHandTotal`/`.earliestBestBefore`
+    /// are read during that filter/sort.
+    @Query(CheckOutHubView.candidatesDescriptor) private var allItems: [Item]
 
     @State private var activeSheet: ActiveSheet?
+
+    private static var candidatesDescriptor: FetchDescriptor<Item> {
+        var descriptor = FetchDescriptor<Item>(sortBy: [SortDescriptor(\.name)])
+        descriptor.relationshipKeyPathsForPrefetching = [\.lots]
+        return descriptor
+    }
 
     private var shortlist: [Item] {
         allItems
@@ -47,7 +60,7 @@ struct CheckOutHubView: View {
             Divider().overlay(Color.larderDivider)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Use these first — earliest best before")
                         .trackedUppercase()
                         .font(LarderFont.eyebrow())
@@ -90,7 +103,7 @@ struct CheckOutHubView: View {
                 }
             case .scanner:
                 BarcodeScannerView { code in
-                    if let match = allItems.first(where: { $0.barcode == code }) {
+                    if let match = Item.match(barcode: code, in: context) {
                         activeSheet = .quantity(match)
                     } else {
                         // Unlike Check In, there's no "add new product" path on Check Out for an

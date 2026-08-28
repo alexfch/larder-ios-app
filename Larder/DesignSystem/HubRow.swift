@@ -14,8 +14,7 @@ struct HubRow: View {
                 Text(item.name)
                     .font(LarderFont.rowTitle())
                 if let earliest = item.earliestBestBefore {
-                    let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: earliest)).day ?? 0
-                    Text("best before \(earliest.formatted(.iso8601.year().month().day())) · \(relativeLabel(days))")
+                    Text("best before \(earliest.formatted(.iso8601.year().month().day())) · \(earliest.relativeDayLabel)")
                         .font(LarderFont.rowSubtitle())
                         .foregroundStyle(Color.larderSecondaryText)
                 }
@@ -27,11 +26,5 @@ struct HubRow: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-    }
-
-    private func relativeLabel(_ days: Int) -> String {
-        if days == 0 { return "today" }
-        if days < 0 { return "\(-days) days ago" }
-        return "in \(days) days"
     }
 }

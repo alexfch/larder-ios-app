@@ -1,0 +1,38 @@
+# SwiftLint baseline config (architecture review, Phase 1 item 4).
+#
+# Conservative starter set: default rules plus a handful of high-value opt-ins, applied only to
+# this app's own source — not the XcodeGen-generated .xcodeproj or DerivedData. Run via the
+# "SwiftLint" build phase (see project.yml), which no-ops with a build warning if `swiftlint`
+# isn't installed rather than failing the build, since this is a solo-developer project with no
+# CI yet and the tool isn't a hard dependency.
+
+included:
+  - Larder
+  - LarderTests
+
+excluded:
+  - Larder.xcodeproj
+  - DerivedData
+
+opt_in_rules:
+  - closure_spacing
+  - empty_count
+  - force_unwrapping
+  - sorted_imports
+  - unhandled_throwing_task
+
+line_length:
+  warning: 160
+  error: 250
+
+type_body_length:
+  warning: 350
+  error: 500
+
+file_length:
+  warning: 500
+  error: 1000
+
+function_body_length:
+  warning: 80
+  error: 150
