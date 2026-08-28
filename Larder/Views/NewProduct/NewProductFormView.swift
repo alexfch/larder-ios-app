@@ -89,7 +89,10 @@ struct NewProductFormView: View {
                     } else {
                         Picker("Unit", selection: $bulkUnit) {
                             Text("g").tag("g")
+                            Text("kg").tag("kg")
+                            Text("lbs").tag("lbs")
                             Text("ml").tag("ml")
+                            Text("l").tag("l")
                         }
                         .pickerStyle(.segmented)
                         HStack {
