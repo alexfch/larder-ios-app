@@ -24,13 +24,16 @@ struct ManualPickListView: View {
             }
             .padding(20)
 
-            TextField("Search name or barcode", text: $searchText)
-                .padding(12)
-                .background(Color.white)
-                .overlay(Rectangle().strokeBorder(Color.larderDivider, lineWidth: 1))
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-
+            // searchText here is the live typed value (for "Add new product" and the empty-state
+            // message text); the results view below queries against the debounced value.
+            ManualPickResultsView(
+                mode: mode,
+                debouncedSearchText: debouncedSearchText,
+                liveSearchText: searchText,
+                onSelect: onSelect,
+                onAddNewProduct: onAddNewProduct
+            )
+            
             if mode == .checkIn, let onAddNewProduct {
                 Button {
                     onAddNewProduct(searchText)
@@ -48,16 +51,15 @@ struct ManualPickListView: View {
                 }
                 Divider().overlay(Color.larderDivider)
             }
+            
+            TextField("Search name or barcode", text: $searchText)
+                .padding(12)
+                .background(Color.white)
+                .overlay(Rectangle().strokeBorder(Color.larderDivider, lineWidth: 1))
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
 
-            // searchText here is the live typed value (for "Add new product" and the empty-state
-            // message text); the results view below queries against the debounced value.
-            ManualPickResultsView(
-                mode: mode,
-                debouncedSearchText: debouncedSearchText,
-                liveSearchText: searchText,
-                onSelect: onSelect,
-                onAddNewProduct: onAddNewProduct
-            )
+            
         }
         .background(Color.larderBackground.ignoresSafeArea())
         .task(id: searchText) {
