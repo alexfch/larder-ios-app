@@ -160,6 +160,19 @@ struct NewProductFormView: View {
                     }
                 }
             }
+            // Form provides no built-in "tap anywhere to dismiss the keyboard" behavior — today
+            // the keyboard only goes away when focus moves to another control (e.g. switching
+            // Kind away from Weight/Volume removes the focused field from the hierarchy
+            // entirely). `simultaneousGesture` fires alongside every row's own tap handling
+            // rather than intercepting it, so this doesn't interfere with picking a Kind segment,
+            // tapping the photo menu, etc. — it just also resigns whatever's currently first
+            // responder (the keyboard-presenting text field, whether SwiftUI-native or the
+            // UIKit-bridged Amount field) on every tap.
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            )
             .navigationTitle("New Product")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
