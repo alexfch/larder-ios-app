@@ -115,9 +115,7 @@ struct NewProductFormView: View {
                         HStack {
                             Text("Amount checked in")
                             Spacer()
-                            TextField("0", value: $quantity, format: .number)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
+                            TrailingCursorNumberField(value: $quantity)
                                 .frame(width: 100)
                         }
                     }
