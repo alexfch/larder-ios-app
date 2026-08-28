@@ -116,7 +116,7 @@ private struct ManualPickResultsView: View {
     /// predicate above — it's a Swift-side filter over whatever the (already search-scoped) query
     /// returned.
     private var filteredItems: [Item] {
-        mode == .checkOut ? items.filter { $0.onHandTotal > 0 } : items
+        CatalogFiltering.manualPickFilteredItems(items, mode: mode)
     }
 
     var body: some View {

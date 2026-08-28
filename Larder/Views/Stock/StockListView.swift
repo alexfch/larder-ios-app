@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 /// FR-5.1: every item, sorted soonest-expiring first (no-batch items last), with search and
 /// an "Expiring ≤ 14 days" filter. Hosts the entry point into a stock-take (FR-7.1).
@@ -20,12 +21,19 @@ struct StockListView: View {
         }
     }
 
+    @Environment(\.modelContext) private var context
+    @Environment(ToastCenter.self) private var toastCenter
     @Query(StockListView.allItemsDescriptor) private var allItems: [Item]
 
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @State private var expiringOnly = false
     @State private var activeSheet: ActiveSheet?
+
+    @State private var exportDocument: BackupDocument?
+    @State private var isExportingBackup = false
+    @State private var isImportingBackup = false
+    @State private var backupErrorMessage: String?
 
     /// Prefetches `lots` for the whole catalog in one round trip, since `expiringSoonCount` below
     /// (and every row's badge) reads `.lots` per item — avoids lazily faulting each item's lots
@@ -43,8 +51,18 @@ struct StockListView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(eyebrow: "In the pantry", title: "Stock") {
-                SecondaryButton(title: "Count") { activeSheet = .countSession }
-                    .frame(width: 96)
+                HStack(spacing: 12) {
+                    Menu {
+                        Button("Export Backup") { exportBackup() }
+                        Button("Import Backup…") { isImportingBackup = true }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Color.larderInk)
+                    }
+                    SecondaryButton(title: "Count") { activeSheet = .countSession }
+                        .frame(width: 96)
+                }
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -95,6 +113,72 @@ struct StockListView: View {
             guard !Task.isCancelled else { return }
             debouncedSearchText = searchText
         }
+        .fileExporter(
+            isPresented: $isExportingBackup,
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: "Larder Backup \(backupFilenameDate())"
+        ) { result in
+            switch result {
+            case .success:
+                toastCenter.show("Backup exported")
+            case .failure(let error):
+                backupErrorMessage = error.localizedDescription
+            }
+        }
+        .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let url):
+                importBackup(from: url)
+            case .failure(let error):
+                backupErrorMessage = error.localizedDescription
+            }
+        }
+        .alert("Backup", isPresented: Binding(
+            get: { backupErrorMessage != nil },
+            set: { isPresented in if !isPresented { backupErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(backupErrorMessage ?? "")
+        }
+    }
+
+    private func exportBackup() {
+        do {
+            exportDocument = BackupDocument(data: try BackupService.export(context: context))
+            isExportingBackup = true
+        } catch {
+            backupErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func importBackup(from url: URL) {
+        // Files handed back by `.fileImporter` are security-scoped: reading them requires
+        // explicitly starting (and, once done, stopping) access.
+        guard url.startAccessingSecurityScopedResource() else {
+            backupErrorMessage = "Couldn't access that file."
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let summary = try BackupService.importBackup(data, context: context)
+            if summary.imported == 0 {
+                toastCenter.show("Nothing new to import — already up to date")
+            } else {
+                toastCenter.show("Imported \(summary.imported) item(s)")
+            }
+        } catch {
+            backupErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func backupFilenameDate() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: .now)
     }
 }
 
@@ -130,18 +214,7 @@ private struct StockResultsView: View {
     }
 
     private var visibleItems: [Item] {
-        var result = items
-        if expiringOnly {
-            result = result.filter { item in item.sortedLots.contains { $0.isExpiringSoon } }
-        }
-        return result.sorted { lhs, rhs in
-            switch (lhs.earliestBestBefore, rhs.earliestBestBefore) {
-            case let (l?, r?): return l < r
-            case (nil, nil): return lhs.name < rhs.name
-            case (nil, _): return false
-            case (_, nil): return true
-            }
-        }
+        CatalogFiltering.stockVisibleItems(items, expiringOnly: expiringOnly)
     }
 
     var body: some View {
@@ -194,9 +267,9 @@ struct StockRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(quantityValueString(item))
+                Text(quantityParts.value)
                     .font(LarderFont.quantityValue())
-                Text(quantityUnitString(item))
+                Text(quantityParts.unit)
                     .font(LarderFont.quantityUnit())
                     .foregroundStyle(Color.larderSecondaryText)
             }
@@ -205,14 +278,17 @@ struct StockRow: View {
         .padding(.vertical, 14)
     }
 
-    private func quantityValueString(_ item: Item) -> String {
-        let full = item.formattedQuantity(item.onHandTotal)
-        return full.components(separatedBy: " ").first ?? full
-    }
-
-    private func quantityUnitString(_ item: Item) -> String {
+    /// `onHandTotal` sums the `lots` relationship and `formattedQuantity` re-derives a string
+    /// from it — real work, previously done twice per row (once for the value, once for the
+    /// unit) by two separate methods that each called `item.formattedQuantity(item.onHandTotal)`
+    /// independently. Splitting once here, within a single `body` evaluation, halves that work
+    /// with no correctness risk, unlike caching across renders on the model itself (see
+    /// `Item.swift`'s doc comment on why that's deliberately not done).
+    private var quantityParts: (value: String, unit: String) {
         let full = item.formattedQuantity(item.onHandTotal)
         let parts = full.components(separatedBy: " ")
-        return parts.count > 1 ? parts.dropFirst().joined(separator: " ") : ""
+        let value = parts.first ?? full
+        let unit = parts.count > 1 ? parts.dropFirst().joined(separator: " ") : ""
+        return (value, unit)
     }
 }

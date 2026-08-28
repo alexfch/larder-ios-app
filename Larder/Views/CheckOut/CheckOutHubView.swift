@@ -42,11 +42,7 @@ struct CheckOutHubView: View {
     }
 
     private var shortlist: [Item] {
-        allItems
-            .filter { $0.onHandTotal > 0 && $0.earliestBestBefore != nil }
-            .sorted { ($0.earliestBestBefore ?? .distantFuture) < ($1.earliestBestBefore ?? .distantFuture) }
-            .prefix(5)
-            .map { $0 }
+        CatalogFiltering.checkOutShortlist(allItems)
     }
 
     var body: some View {

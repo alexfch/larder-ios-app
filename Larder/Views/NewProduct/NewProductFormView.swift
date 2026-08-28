@@ -122,9 +122,11 @@ struct NewProductFormView: View {
                     }
                     .onChange(of: photoItem) { _, newItem in
                         Task {
-                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                photoData = data
-                            }
+                            guard let data = try? await newItem?.loadTransferable(type: Data.self) else { return }
+                            // Downsample before it's ever stored: photos only ever render at
+                            // thumbnail size, so there's no reason to keep the camera/photo
+                            // library's full resolution in Item.photoData at all.
+                            photoData = await ImageDownsampling.downsample(data) ?? data
                         }
                     }
                 }

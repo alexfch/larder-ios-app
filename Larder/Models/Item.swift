@@ -40,6 +40,24 @@ final class Item {
         self.createdAt = createdAt
     }
 
+    // MARK: Derived values (deliberately not memoized — see note below)
+
+    /// `onHandTotal`, `earliestBestBefore`, `sortedLots`, and `sortedTransactions` all
+    /// recompute on every access, which the architecture review flagged (Medium priority, but
+    /// explicitly ranked lowest of its performance findings, "opportunistic only").
+    ///
+    /// A stored `@Transient` cache was considered and deliberately rejected: `@Model` synthesizes
+    /// `Observable` conformance over every property, transient or not, and SwiftUI's Observation
+    /// tracks dependencies *dynamically* — it records exactly which properties a computed
+    /// property's getter actually reads during that specific call. A cache-hit path reads the
+    /// transient cache property instead of `lots`, so SwiftUI would stop registering `lots` as a
+    /// dependency on any render that happened to hit the cache — silently breaking reactivity
+    /// (a stale `onHandTotal` shown after a check-out, with no further re-render to fix it) rather
+    /// than just costing CPU. That failure mode is worse than the cost it would save, for
+    /// per-item lot/transaction counts that are small in practice (a home pantry, not a
+    /// warehouse). If profiling ever shows this actually matters, revisit with a scheme that
+    /// still reads `lots`/`transactions` on every access (e.g. a cheap fingerprint check), not one
+    /// that substitutes a differently-tracked property for them.
     var onHandTotal: Double {
         lots.reduce(0) { $0 + $1.qty }
     }
