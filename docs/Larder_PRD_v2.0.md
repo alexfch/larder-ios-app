@@ -3,11 +3,11 @@
 
 | | |
 |---|---|
-| **Document status** | Draft — Updated from interactive prototype |
-| **Version** | 2.0 (supersedes 1.0 "HomeStock" draft) |
+| **Document status** | Draft — Updated from interactive prototype, then again from v1.0 engineering hardening |
+| **Version** | 2.1 (supersedes 2.0; 2.0 supersedes 1.0 "HomeStock" draft) |
 | **Prepared for** | Development Team |
 | **Product owner** | Home Food Warehouse Program |
-| **Date** | August 25, 2026 |
+| **Date** | August 28, 2026 |
 | **Platforms** | iOS, Android (React Native) + Cloud Backend |
 
 *Grounded in a review of existing pantry/warehouse inventory apps (Sortly, KitchenPal, Pantry Check, Pantry Inventory Tracker, Portions Master) and validated against the "Larder" interactive prototype (v1 and v2).*
@@ -20,10 +20,10 @@
 |---|---|
 | Product name | Larder (renamed from working title "HomeStock" to match the prototype) |
 | Document type | Product Requirements Document (PRD) |
-| Version | 2.0 — Draft for engineering review |
+| Version | 2.1 — Draft for engineering review |
 | Author | Product Management |
-| Date | August 25, 2026 |
-| Status | Updated to reflect the interactive "Larder" prototype (v1 and v2 explorations) |
+| Date | August 28, 2026 |
+| Status | Updated to reflect functionality added during v1.0 engineering hardening, on top of the interactive "Larder" prototype (v1 and v2 explorations) |
 | Distribution | Engineering, Design, QA, Release Management |
 
 ### Revision History
@@ -33,6 +33,7 @@
 | 0.1 | 2026-08-10 | Product | Initial research and competitive scan |
 | 1.0 | 2026-08-24 | Product | First development-ready draft, based on competitor research only |
 | 2.0 | 2026-08-25 | Product | Rewritten against the "Larder" interactive prototype: batch/lot-based stock model, check-out-first navigation, new inventory count/stock-take epic, and a rescoped v1.0 (single user, single location) with household sharing, multi-location, and low-stock alerts moved to Phase 2 on the strength of a working v1 prototype exploration. |
+| 2.1 | 2026-08-28 | Product | Documents functionality that emerged from v1.0 engineering hardening (a multi-specialist architecture review and its remediation) rather than from further prototyping: barcode uniqueness enforcement (FR-4.2), local backup/export (FR-5.3, resolving the Section 16 open question of the same name), camera-based photo capture alongside the photo library (FR-3.2, revised), explicit data-at-rest file protection (Section 11), and PIN throttling/lockout requirements for the Phase 2 sign-in epic (FR-8.3). |
 
 ---
 
@@ -121,11 +122,13 @@ v1.0 is built for a single primary operator managing one shelf. The personas bel
 - Three-tab navigation: Check Out (default), Check In, Stock.
 - Barcode scanning to check items in and out; a Manual Pick list as the no-camera fallback for both directions.
 - Batch (lot) tracking: every check-in creates a dated batch; check-out draws from the earliest batch by default or a batch the user selects.
-- New Product capture (barcode or manual) with a Whole units vs. Weight/Volume toggle, optional photo, and an initial check-in as part of saving.
+- New Product capture (barcode or manual) with a Whole units vs. Weight/Volume toggle, an optional photo (camera capture or photo library), and an initial check-in as part of saving.
+- Barcode uniqueness enforcement and input validation, so two items can never silently share the identity a scan resolves against (FR-4.2).
 - Stock browser with search (name or barcode) and an "Expiring ≤ 14 days" filter.
 - Per-item detail screen: on-hand total, earliest best-before, a list of batches on the shelf, and full movement history.
 - Correctable transaction history: swipe a row to edit or remove a past movement, with the balance rolling back automatically.
 - Physical inventory count (stock-take): checklist or scan-sweep counting, numeric keypad entry, a diff/adjust review with reason tags, and apply/discard.
+- Local backup and restore via a system file export/import, covering the full catalog, batches, and movement history (FR-5.3).
 - Toast confirmations after every check-in, check-out, edit, removal, and count application.
 
 ### 7.2 Deferred to Phase 2 — prototyped in v1, not in v1.0
@@ -246,18 +249,22 @@ The form captures: name (required), barcode (optional — blank means no barcode
 **Acceptance criteria**
 - Given the user reached this form from a barcode scan with no match, when the form opens, then the barcode field is pre-filled with the scanned code and a note explains nothing was found on file.
 - Given the user saves without a name, when they try, then the save is blocked with an inline prompt to enter a name first.
+- Given the entered barcode is already used by another item, when the user tries to save, then the save is blocked with an inline message naming the conflicting item, rather than silently creating a second item under the same barcode (see FR-4.2).
 - Given the form is saved successfully, when saved, then the new item appears immediately in Stock, in search, and in the batch/history views, with its first batch already recorded.
 - Given the user switches between Whole units and Weight/Volume, when switched, then the quantity/unit fields relabel accordingly (e.g., "Quantity" + "Unit name (jar, tin, egg…)" vs. "Amount checked in" + "Unit (g / ml)").
 
 #### FR-3.2 — Photo capture on new products `Should`
 
-**User story:** As a household member, I want to attach a photo to a product I've added so it's recognizable at a glance in lists.
+**User story:** As a household member, I want to attach a photo to a product I've added — taken on the spot or picked from my library — so it's recognizable at a glance in lists.
 
-The New Product form includes a photo capture control. Once set, the photo (or a placeholder derived from the item's initials if none is set) is reused everywhere the item appears in a list.
+The New Product form's photo control offers two capture paths: taking a picture with the device camera, or choosing an existing photo from the library. Once set, the photo (or a placeholder derived from the item's initials if none is set) is reused everywhere the item appears in a list. If camera access hasn't been granted yet, the app requests it at the point of use; if access was previously denied, the camera option explains this and offers a direct path to the relevant Settings screen rather than presenting a non-functional camera view.
 
 **Acceptance criteria**
-- Given a user adds a photo, when saved, then that photo appears next to the item in Stock, hub rows, and the manual pick list.
+- Given a user adds a photo by either path, when saved, then that photo appears next to the item in Stock, hub rows, and the manual pick list.
 - Given no photo is set, when the item appears in a list, then a monogram placeholder derived from its name is shown instead of a blank space.
+- Given the user chooses to take a picture and the app has not yet asked for camera access, when the camera option is selected, then the standard system permission prompt is shown before the camera opens.
+- Given camera access was previously denied, when the user selects the camera option, then the app explains that camera access is off and offers a control that opens the app's Settings page directly, rather than showing a blank or non-functional camera screen.
+- Given the device has no camera at all (e.g. in a simulator/testing environment), when the photo control is opened, then only the photo-library option is offered.
 
 ### 9.4 Epic: Product Data & Barcode Lookup
 
@@ -271,6 +278,18 @@ On an unrecognized barcode, the app queries an external open product database (r
 - Given a barcode not yet known locally, when scanned with connectivity available, then the app queries the lookup service and pre-fills available fields on the New Product form within 3 seconds under normal connectivity.
 - Given the lookup returns no match or the device is offline, when this happens, then the user lands on the New Product form with just the scanned code filled in, with no error blocking them.
 - Given a lookup succeeds, when the result is saved, then it is cached locally so the same barcode is recognized instantly on any future scan without a network call.
+
+#### FR-4.2 — Barcode uniqueness and input validation `Must`
+
+**User story:** As the person managing the shelf, I want the app to stop me from accidentally adding the same product twice under the same barcode, since two items silently sharing a barcode would split what should be one product's on-hand total and history without any warning.
+
+A barcode is the de facto unique identity a scan resolves against everywhere in the app — Check In, Check Out, and Count scan sweep all match a scanned code to a single existing item this way. Saving a new product with a barcode already used by an existing item is blocked, naming the conflicting item, rather than silently creating a second item that future scans would resolve unpredictably. Before a scanned or typed barcode is ever persisted or sent to the external lookup service (FR-4.1), it is validated against the character set and length real barcode symbologies (EAN/UPC/Code128/Code39) actually produce, since the scanner also recognizes QR codes, which can carry arbitrary text rather than a real barcode.
+
+**Acceptance criteria**
+- Given a barcode already belongs to an existing item, when the user tries to save a new product with that same barcode, then the save is blocked and an inline message names the existing item.
+- Given the barcode field is left blank, when the product is saved, then no uniqueness check applies — multiple items may have no barcode.
+- Given a scanned or typed value contains characters outside the supported barcode character set (e.g. a QR code carrying a URL or arbitrary text) or is implausibly short or long, when the user reaches Save or a lookup would otherwise be triggered, then it is rejected with an inline message instead of being persisted or sent to the external lookup service.
+- Given a barcode passes validation, when it is stored or looked up, then it is compared and matched case-insensitively and with surrounding whitespace trimmed, so the same physical barcode always resolves to the same item regardless of how it was entered.
 
 ### 9.5 Epic: Stock Browser & Expiry Visibility
 
@@ -296,6 +315,18 @@ The detail screen shows the item's total on-hand quantity, its earliest best-bef
 - Given an item has no batches, when its detail screen is opened, then it shows "Nothing on the shelf. Check some in." instead of an empty batch list.
 - Given an item has no movement history, when its detail screen is opened, then it shows "No movements yet." instead of an empty history list.
 - Given the user taps Check Out or Check In from the detail screen, when tapped, then the quantity sheet opens for that specific item.
+
+#### FR-5.3 — Local backup and restore `Should`
+
+**User story:** As the person responsible for the shelf record, I want to be able to back up my inventory and bring it back after reinstalling the app or switching devices, since v1.0 keeps everything on one device with no account-based cloud backup.
+
+*This resolves the local-backup open question raised in Section 16 of the 2.0 draft.* A menu on the Stock tab offers Export Backup and Import Backup. Export writes the current catalog — every item, its batches, and its full movement history — to a JSON file, handed to the system's standard save/share destination picker (Files, AirDrop, etc.) so the user chooses where it goes. Import reads a previously exported file and recreates any item not already present, without overwriting or duplicating anything already in the app. Item photos and count sessions (in-progress, applied, or discarded) are deliberately excluded from the export: photos would roughly double the file size for something easy to reattach by hand if truly needed, and a count session is workflow state tied to one moment rather than shelf-record data — an applied session's effect already lives on in the movement history that comes with the export regardless. The export is not encrypted; it carries no more protection than whatever destination the user picks for it.
+
+**Acceptance criteria**
+- Given the user taps Export Backup, when the export completes, then the system save/share sheet opens with a JSON file already named with the current date, ready to save wherever the user chooses.
+- Given the user taps Import Backup and selects a previously exported file, when the import completes, then every item in the file not already present is recreated with its full batch and movement history, and the user is told how many items were imported.
+- Given an imported file contains an item that would collide with an existing item — the same original item, or a different item already using that barcode — when imported, then that item is skipped rather than overwriting or duplicating the existing one.
+- Given the selected file is not a valid Larder backup, or was exported by a newer version of the app than the one importing it, then the import fails with a clear error rather than partially importing or corrupting existing data.
 
 ### 9.6 Epic: Correctable Transaction History
 
@@ -379,6 +410,18 @@ Once accounts exist (FR-8.1), inventory read/write extends from a single local d
 - Given two household members are on different devices, when one checks an item in or out, then the other's view reflects the change within a few seconds under normal connectivity.
 - Given two devices make conflicting offline changes to the same item, when both reconnect, then the changes are merged as additive quantity deltas rather than one overwriting the other.
 
+#### FR-8.3 — PIN throttling and lockout `Should (Phase 2)`
+
+**User story:** As a household relying on a short PIN rather than a full password, I want repeated wrong guesses to be limited, since a 4-digit PIN is only 10,000 possibilities and offers little real protection without one.
+
+*Flagged during v1.0 engineering hardening as a design gate for this epic (see `.architecture/decisions/adrs/0002-pin-throttling-and-lockout-design-gate-for-phase-2-household-sign-in.md` for the full rationale) because retrofitting attempt-limiting after a session/backend contract and stored-PIN format already exist is expensive, while designing it in now, before any of that code is written, is cheap.* Before FR-8.1 is implemented, its design must define: a maximum number of consecutive failed attempts before lockout; whether lockout is a fixed cooldown, an escalating backoff across repeated lockouts, or requires a stronger credential (e.g. the device passcode) to clear; a recovery path for a member who is fully locked out; and where the PIN and its attempt/lockout counters are stored.
+
+**Acceptance criteria**
+- Given a household member enters an incorrect PIN, when a defined number of consecutive incorrect attempts is reached, then further attempts are locked out for a cooldown period rather than accepted indefinitely.
+- Given a member is locked out, when they attempt to sign in again before the cooldown ends, then the app states plainly that they're locked out and how long remains, rather than silently rejecting the correct-looking PIN entry UI.
+- Given a member has forgotten their PIN and is locked out, when this happens, then a defined recovery path exists (e.g. another member with elevated access, or the device passcode) rather than an unrecoverable dead end.
+- Given the PIN and its attempt/lockout counters are persisted, when stored, then they live in Keychain with an explicit accessibility policy — never in `UserDefaults`, a plist, or an unencrypted database field.
+
 ### 10.2 Named Storage Locations
 
 #### FR-9.1 — Multiple named locations with a filter `Should (Phase 2)`
@@ -427,9 +470,10 @@ A Quick Out screen lists every item with a stepper (−/quantity/+); the user ad
 |---|---|
 | Performance | Barcode scan-to-result feedback in under 1 second on a mid-range device (2022+ hardware). Full check-in/out flow completable in under 5 seconds for a recognized item. |
 | Offline capability | All check-in, check-out, manual entry, and count actions must work fully offline against local storage; any future sync (Phase 2, FR-8.2) is eventually consistent, not a blocking requirement. |
-| Local data integrity | v1.0 is single-device: the app must guard against data loss on interrupted actions (e.g., killed mid-transaction) and should offer a local backup/export/restore mechanism given there is no account-based cloud backup yet. |
+| Local data integrity | v1.0 is single-device: the app must guard against data loss on interrupted actions (e.g., killed mid-transaction), recover the local store rather than fail to launch if it becomes corrupted or otherwise unreadable, and offer a local backup/export/restore mechanism (FR-5.3) given there is no account-based cloud backup yet. |
+| Data-at-rest protection | The local store and any stored item photos must use an explicit, documented iOS data-protection class (file-level encryption tied to device lock state) rather than leaving protection implicit/platform-default. |
 | Platforms | Native mobile experience on iOS and Android (recommended: single React Native codebase, consistent with the prototype's iOS-frame design system, for parity and shared release cadence). |
-| Data privacy | Barcode lookups may be sent to an external product database but must contain no personal data. Once accounts exist (Phase 2), household inventory data is private to invited members only. |
+| Data privacy | Barcode lookups may be sent to an external product database but must contain no personal data. A local backup export (FR-5.3) is not encrypted by the app itself — its protection is whatever the user's chosen save destination provides. Once accounts exist (Phase 2), household inventory data is private to invited members only. |
 | Accessibility | WCAG 2.1 AA target for all core flows: sufficient color contrast (the prototype's high-contrast, monospace-accented style supports this), screen-reader labels on scan/check-in/check-out/count controls, and a manual-entry path for any user who cannot use the camera scanner. |
 | Reliability | No data loss on interrupted check-in/out or count-apply — actions are atomic and locally persisted before any network call. |
 | Scalability | Support a catalog of up to 5,000 distinct items and, per item, a reasonable number of concurrent open batches (design and test up to 20) without list or detail-screen performance degradation. |
@@ -443,7 +487,7 @@ Rewritten around the prototype's actual shape: items own an embedded list of dat
 
 | Entity | Key Fields | Notes |
 |---|---|---|
-| Item | id, name, barcode (nullable), kind ('unit' \| 'bulk'), unit (g \| ml — bulk only), noun (e.g. tin, jar, carton — unit only), photo (nullable), lots[] | The core catalog + stock record. A barcode-less item (kind, form) is a first-class row, not a special case. |
+| Item | id, name, barcode (nullable), kind ('unit' \| 'bulk'), unit (g \| ml — bulk only), noun (e.g. tin, jar, carton — unit only), photo (nullable), lots[] | The core catalog + stock record. A barcode-less item (kind, form) is a first-class row, not a special case. When present, barcode must be unique across items — enforced at the application layer as an explicit pre-save check (FR-4.2), not as a database-level uniqueness constraint. |
 | Lot (batch) | id, itemId, qty, exp (date) | A dated quantity received together. An item's on-hand total is the sum of its lots' quantities; its "earliest" date is the minimum exp across lots. |
 | Transaction (movement) | id, itemId, action ('IN' \| 'OUT' \| 'ADJUST'), qty, exp (the batch it affected), date, time, [Phase 2] userId | Editable and reversible in the UI (Section 9.6) — not an immutable ledger. Reversal recomputes the affected lot's quantity. |
 | CountSession | id/session no, mode ('list' \| 'scan'), counted (map of itemId → counted qty), reasons (map of itemId → reason label), status (in-progress \| applied \| discarded) | Applying a session writes one ADJUST transaction per differing item and closes the session; discarding leaves item state untouched. |
@@ -473,15 +517,17 @@ Rewritten around the prototype's actual shape: items own an embedded list of dat
 
 - Check Out / Check In / Stock tab structure; scan and manual pick in both directions.
 - Batch (lot) tracking with earliest-first consumption and batch selection.
-- New Product capture with the unit/bulk kind toggle and optional photo.
+- New Product capture with the unit/bulk kind toggle and an optional photo, captured via camera or chosen from the library (FR-3.2).
 - External barcode lookup (Open Food Facts) with local caching.
+- Barcode uniqueness enforcement and input validation (FR-4.2).
 - Stock browser, per-item detail, and expiry filtering.
 - Correctable transaction history (edit/remove with automatic balance rollback).
 - Full inventory count workflow: checklist/scan-sweep, keypad entry, blind count option, diff/adjust review, apply/discard.
+- Local backup and restore via file export/import (FR-5.3).
 
 ### Phase 2 — Household & Organization (de-risked by the v1 prototype)
 
-- PIN sign-in per household member with signed movements (FR-8.1).
+- PIN sign-in per household member with signed movements (FR-8.1), including attempt throttling/lockout (FR-8.3).
 - Real-time shared inventory across devices (FR-8.2).
 - Named storage locations with a filter (FR-9.1).
 - Per-item low-stock thresholds and a LOW indicator (FR-10.1).
@@ -501,7 +547,7 @@ Rewritten around the prototype's actual shape: items own an embedded list of dat
 | Risk / Assumption | Type | Mitigation |
 |---|---|---|
 | Batch-level tracking adds real UI and logic complexity (batch selection, earliest-first draw, lot-merging on matching dates) versus a flat-quantity model. | Risk | Fully specified in Section 9.2 with acceptance criteria taken directly from working prototype behavior, reducing ambiguity for engineering. |
-| Without accounts in v1.0, all data lives on a single device with no automatic backup. | Risk | Non-functional requirement for local export/backup (Section 11) called out explicitly; Phase 2 accounts resolve this properly. |
+| Without accounts in v1.0, all data lives on a single device with no automatic backup. | Risk | Mitigated in v1.0 by FR-5.3's manual local export/import; still requires the user to remember to do it, since there's no automatic/scheduled backup. Phase 2 accounts resolve this more completely with real, automatic cloud backup. |
 | External barcode database (Open Food Facts) has gaps, especially for regional/store-brand products. | Risk | Manual/New Product entry is a first-class, equally fast fallback (FR-3.1), not a degraded path. |
 | Applying a stock-take adjustment against "the earliest batch" may misstate which specific batch was actually short or spoiled. | Risk | Acceptable for v1.0 given the reason-tagging UX (FR-7.3); revisit if user feedback shows this misattributes waste to the wrong batch. |
 | Single-operator v1.0 may undersell the product to multi-person households who expected shared access from day one. | Risk | Messaging should be explicit that household sharing is a near-term Phase 2, not an abandoned idea — supported by an already-working v1 design. |
@@ -511,7 +557,7 @@ Rewritten around the prototype's actual shape: items own an embedded list of dat
 
 ## 16. Open Questions for Engineering & Design
 
-- What local backup/export mechanism should ship in v1.0 given there is no backend account yet — a file export, a device-native backup, or a lightweight anonymous cloud sync ahead of full Phase 2 accounts?
+- ~~What local backup/export mechanism should ship in v1.0 given there is no backend account yet — a file export, a device-native backup, or a lightweight anonymous cloud sync ahead of full Phase 2 accounts?~~ **Resolved in v2.1:** a local JSON file export/import via the system save/share picker, scoped to the catalog, batches, and movement history only (no photos, no count sessions), with no encryption of its own — see FR-5.3. Revisit if user feedback shows the manual, un-automated nature of this is insufficient before Phase 2 accounts ship.
 - Should the barcode lookup cache be pre-seeded for common products, or purely lazy-loaded on first scan?
 - For stock-take adjustments, should the user ever be able to choose which specific batch absorbs the adjustment, rather than always defaulting to the earliest one?
 - When Phase 2 introduces locations, should existing single-location v1.0 data migrate into a default "Pantry" location automatically, or prompt the user to assign locations retroactively?
@@ -532,6 +578,8 @@ Rewritten around the prototype's actual shape: items own an embedded list of dat
 | Stock-take / Count session | A session in which the physical shelf is counted and compared against the app's book quantities, producing signed adjustment movements for any differences. |
 | Blind count | A count-session mode that hides book quantities from the counter until review, to avoid anchoring the physical count to the app's existing figure. |
 | FIFO | First-in, first-out — the default batch-consumption order Larder uses on check-out: the earliest-dated batch is drawn from first. |
+| Barcode uniqueness | The rule that a barcode, once used by a saved item, cannot be reused by another item — the identity a scan resolves against everywhere in the app (FR-4.2). |
+| Backup / Export | A user-initiated JSON snapshot of the catalog, batches, and history, saved via the system's file/share picker so it can be restored later or moved to a new device (FR-5.3). |
 
 ### B. Research Sources
 
