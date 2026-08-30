@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// F3/F5: searchable fallback for both check-in and check-out. In check-out mode, only items
 /// with stock on hand are searchable (FR-1.3). In check-in mode, a "+ Add new product" action
@@ -25,7 +24,7 @@ struct ManualPickListView: View {
             .padding(20)
 
             // searchText here is the live typed value (for "Add new product" and the empty-state
-            // message text); the results view below queries against the debounced value.
+            // message text); the results view below filters against the debounced value.
             ManualPickResultsView(
                 mode: mode,
                 debouncedSearchText: debouncedSearchText,
@@ -33,7 +32,7 @@ struct ManualPickListView: View {
                 onSelect: onSelect,
                 onAddNewProduct: onAddNewProduct
             )
-            
+
             if mode == .checkIn, let onAddNewProduct {
                 Button {
                     onAddNewProduct(searchText)
@@ -51,7 +50,7 @@ struct ManualPickListView: View {
                 }
                 Divider().overlay(Color.larderDivider)
             }
-            
+
             TextField("Search name or barcode", text: $searchText)
                 .padding(12)
                 .background(Color.white)
@@ -59,12 +58,12 @@ struct ManualPickListView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
 
-            
+
         }
         .background(Color.larderBackground.ignoresSafeArea())
         .task(id: searchText) {
-            // Debounce: at catalog scale, reconstructing the results view's @Query on every
-            // keystroke is real, avoidable work. `.task(id:)` cancels the previous sleep
+            // Debounce: at catalog scale, re-filtering the (already fully-synced) catalog on
+            // every keystroke is avoidable work. `.task(id:)` cancels the previous sleep
             // automatically when `searchText` changes again before it elapses, so only a pause
             // in typing actually commits a new search.
             try? await Task.sleep(for: .milliseconds(250))
@@ -74,51 +73,30 @@ struct ManualPickListView: View {
     }
 }
 
-/// Owns the actual result set. `debouncedSearchText` (once non-empty) scopes this view's own
-/// `@Query` to a name/barcode predicate — narrowing the *fetch* at the SwiftData layer instead of
-/// loading the whole catalog into memory just to filter it in Swift, per the architecture
-/// review's "unfiltered @Query" finding. `liveSearchText` is only for display text (the "Add new
-/// product" prompt), so it doesn't need to wait for the debounce.
+/// Owns the actual result set. The whole (5,000-item-capped) catalog is already synced locally
+/// via `CatalogStore` (ADR-0003), so this filters/sorts client-side in Swift rather than scoping a
+/// SwiftData fetch predicate the way the old `@Query`-based version did — Firestore has no native
+/// substring/`contains` query, so this was always going to be a client-side filter eventually;
+/// the debounce above is what keeps that affordable at catalog scale.
 private struct ManualPickResultsView: View {
-    @Query private var items: [Item]
+    @Environment(CatalogStore.self) private var store
+
     let mode: QuantitySheetMode
+    let debouncedSearchText: String
     let liveSearchText: String
     let onSelect: (Item) -> Void
     let onAddNewProduct: ((String) -> Void)?
 
-    init(
-        mode: QuantitySheetMode,
-        debouncedSearchText: String,
-        liveSearchText: String,
-        onSelect: @escaping (Item) -> Void,
-        onAddNewProduct: ((String) -> Void)?
-    ) {
-        self.mode = mode
-        self.liveSearchText = liveSearchText
-        self.onSelect = onSelect
-        self.onAddNewProduct = onAddNewProduct
-
-        let descriptor: FetchDescriptor<Item>
-        if debouncedSearchText.count >= 1 {
-            descriptor = FetchDescriptor<Item>(
-                predicate: #Predicate<Item> { item in
-                    item.name.localizedStandardContains(debouncedSearchText)
-                        || (item.barcode?.localizedStandardContains(debouncedSearchText) ?? false)
-                },
-                sortBy: [SortDescriptor(\.name)]
-            )
-        } else {
-            descriptor = FetchDescriptor<Item>(sortBy: [SortDescriptor(\.name)])
-        }
-        _items = Query(descriptor)
-    }
-
-    /// `onHandTotal` is computed from the `lots` relationship rather than a stored attribute, so
-    /// the check-out "only items with stock on hand" rule can't be expressed in the fetch
-    /// predicate above — it's a Swift-side filter over whatever the (already search-scoped) query
-    /// returned.
     private var filteredItems: [Item] {
-        CatalogFiltering.manualPickFilteredItems(items, mode: mode)
+        var items = store.items
+        if debouncedSearchText.count >= 1 {
+            items = items.filter {
+                $0.name.localizedStandardContains(debouncedSearchText)
+                    || ($0.barcode?.localizedStandardContains(debouncedSearchText) ?? false)
+            }
+        }
+        items = CatalogFiltering.manualPickFilteredItems(items, transactions: store.transactions, mode: mode)
+        return items.sorted { $0.name < $1.name }
     }
 
     var body: some View {
@@ -144,7 +122,7 @@ private struct ManualPickResultsView: View {
                         Button {
                             onSelect(item)
                         } label: {
-                            HubRow(item: item)
+                            HubRow(item: item, transactions: store.transactions)
                         }
                         .buttonStyle(.plain)
                         Divider().overlay(Color.larderDivider)

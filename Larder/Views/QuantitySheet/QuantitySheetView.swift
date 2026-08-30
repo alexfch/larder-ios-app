@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 enum QuantitySheetMode {
     case checkIn
@@ -9,7 +8,7 @@ enum QuantitySheetMode {
 /// Shared by every check-in/out entry point (hub rows, scan, manual pick, item detail).
 /// Shows batch chips only when checking out an item with 2+ lots, per FR-2.2.
 struct QuantitySheetView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
@@ -26,10 +25,14 @@ struct QuantitySheetView: View {
         self.mode = mode
         _quantity = State(initialValue: 1)
         _expDate = State(initialValue: Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now)
-        _selectedLot = State(initialValue: preselectedLot ?? item.sortedLots.first)
+        _selectedLot = State(initialValue: preselectedLot)
     }
 
     private var stepSize: Double { item.kind == .unit ? 1 : (item.unit == "ml" || item.unit == "g" ? 50 : 1) }
+
+    private var sortedLots: [Lot] {
+        CatalogDerivation.sortedLots(itemId: item.id, transactions: store.transactions)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +50,7 @@ struct QuantitySheetView: View {
             Divider().overlay(Color.larderDivider)
 
             VStack(alignment: .leading, spacing: 24) {
-                if mode == .checkOut, item.sortedLots.count > 1 {
+                if mode == .checkOut, sortedLots.count > 1 {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Batch")
                             .trackedUppercase()
@@ -55,10 +58,10 @@ struct QuantitySheetView: View {
                             .foregroundStyle(Color.larderSecondaryText)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(item.sortedLots) { lot in
+                                ForEach(sortedLots) { lot in
                                     BatchChip(
                                         label: "\(item.formattedQuantity(lot.qty)) · \(lot.exp.formatted(.iso8601.year().month().day()))",
-                                        isSelected: selectedLot?.id == lot.id
+                                        isSelected: (selectedLot ?? sortedLots.first)?.exp == lot.exp
                                     ) {
                                         selectedLot = lot
                                     }
@@ -133,12 +136,16 @@ struct QuantitySheetView: View {
     private func confirm() {
         switch mode {
         case .checkIn:
-            StockService.checkIn(item: item, qty: quantity, exp: expDate, context: context)
-            toastCenter.show("Checked in \(item.formattedQuantity(quantity))")
-            dismiss()
+            do {
+                try StockService.checkIn(itemId: item.id, qty: quantity, exp: expDate, store: store)
+                toastCenter.show("Checked in \(item.formattedQuantity(quantity))")
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         case .checkOut:
             do {
-                try StockService.checkOut(item: item, qty: quantity, preferredLot: selectedLot, context: context)
+                try StockService.checkOut(itemId: item.id, qty: quantity, preferredLot: selectedLot ?? sortedLots.first, store: store)
                 toastCenter.show("Checked out \(item.formattedQuantity(quantity))")
                 dismiss()
             } catch {

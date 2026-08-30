@@ -1,45 +1,50 @@
 import XCTest
-import SwiftData
 @testable import Larder
 
+@MainActor
 final class StockServiceTests: XCTestCase {
-    var container: ModelContainer!
-    var context: ModelContext!
+    var store: InMemoryCatalogStore!
 
     override func setUpWithError() throws {
-        let schema = Schema([Item.self, Lot.self, Transaction.self, CountSession.self, CountLine.self])
-        container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
-        context = ModelContext(container)
+        store = InMemoryCatalogStore()
     }
 
     private func makeItem(name: String = "Tinned Tomatoes") -> Item {
         let item = Item(name: name, kind: .unit, noun: "tin")
-        context.insert(item)
+        try? store.addItem(item)
         return item
     }
 
-    func testCheckInCreatesNewLot() {
-        let item = makeItem()
-        let exp = Date(timeIntervalSince1970: 2_000_000_000)
-
-        StockService.checkIn(item: item, qty: 4, exp: exp, context: context)
-
-        XCTAssertEqual(item.lots.count, 1)
-        XCTAssertEqual(item.onHandTotal, 4)
-        XCTAssertEqual(item.transactions.count, 1)
-        XCTAssertEqual(item.transactions.first?.action, .checkIn)
+    private func onHandTotal(_ item: Item) -> Double {
+        CatalogDerivation.onHandTotal(itemId: item.id, transactions: store.transactions)
     }
 
-    func testCheckInMergesIntoExistingLotOnSameDate() {
+    private func lots(_ item: Item) -> [Lot] {
+        CatalogDerivation.sortedLots(itemId: item.id, transactions: store.transactions)
+    }
+
+    func testCheckInCreatesNewLot() throws {
         let item = makeItem()
         let exp = Date(timeIntervalSince1970: 2_000_000_000)
 
-        StockService.checkIn(item: item, qty: 4, exp: exp, context: context)
-        StockService.checkIn(item: item, qty: 3, exp: exp, context: context)
+        try StockService.checkIn(itemId: item.id, qty: 4, exp: exp, store: store)
 
-        XCTAssertEqual(item.lots.count, 1)
-        XCTAssertEqual(item.onHandTotal, 7)
-        XCTAssertEqual(item.transactions.count, 2)
+        XCTAssertEqual(lots(item).count, 1)
+        XCTAssertEqual(onHandTotal(item), 4)
+        XCTAssertEqual(store.transactions(for: item.id).count, 1)
+        XCTAssertEqual(store.transactions(for: item.id).first?.action, .checkIn)
+    }
+
+    func testCheckInMergesIntoExistingLotOnSameDate() throws {
+        let item = makeItem()
+        let exp = Date(timeIntervalSince1970: 2_000_000_000)
+
+        try StockService.checkIn(itemId: item.id, qty: 4, exp: exp, store: store)
+        try StockService.checkIn(itemId: item.id, qty: 3, exp: exp, store: store)
+
+        XCTAssertEqual(lots(item).count, 1)
+        XCTAssertEqual(onHandTotal(item), 7)
+        XCTAssertEqual(store.transactions(for: item.id).count, 2)
     }
 
     func testCheckOutDrawsOldestLotFirst() throws {
@@ -49,14 +54,14 @@ final class StockServiceTests: XCTestCase {
         let older = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_000_000_000))
         let newer = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 2_000_000_000))
 
-        StockService.checkIn(item: item, qty: 5, exp: newer, context: context)
-        StockService.checkIn(item: item, qty: 3, exp: older, context: context)
+        try StockService.checkIn(itemId: item.id, qty: 5, exp: newer, store: store)
+        try StockService.checkIn(itemId: item.id, qty: 3, exp: older, store: store)
 
-        try StockService.checkOut(item: item, qty: 3, context: context)
+        try StockService.checkOut(itemId: item.id, qty: 3, store: store)
 
-        XCTAssertEqual(item.lots.count, 1)
-        XCTAssertEqual(item.sortedLots.first?.exp, newer)
-        XCTAssertEqual(item.onHandTotal, 5)
+        XCTAssertEqual(lots(item).count, 1)
+        XCTAssertEqual(lots(item).first?.exp, newer)
+        XCTAssertEqual(onHandTotal(item), 5)
     }
 
     func testCheckOutCascadesAcrossMultipleLots() throws {
@@ -64,94 +69,91 @@ final class StockServiceTests: XCTestCase {
         let older = Date(timeIntervalSince1970: 1_000_000_000)
         let newer = Date(timeIntervalSince1970: 2_000_000_000)
 
-        StockService.checkIn(item: item, qty: 2, exp: older, context: context)
-        StockService.checkIn(item: item, qty: 5, exp: newer, context: context)
+        try StockService.checkIn(itemId: item.id, qty: 2, exp: older, store: store)
+        try StockService.checkIn(itemId: item.id, qty: 5, exp: newer, store: store)
 
-        let transactions = try StockService.checkOut(item: item, qty: 4, context: context)
+        let transactions = try StockService.checkOut(itemId: item.id, qty: 4, store: store)
 
-        XCTAssertEqual(item.onHandTotal, 3)
-        XCTAssertEqual(item.lots.count, 1)
+        XCTAssertEqual(onHandTotal(item), 3)
+        XCTAssertEqual(lots(item).count, 1)
         XCTAssertEqual(transactions.count, 2, "should split across the two lots it drew from")
     }
 
-    func testCheckOutThrowsWhenInsufficientStock() {
+    func testCheckOutThrowsWhenInsufficientStock() throws {
         let item = makeItem()
-        StockService.checkIn(item: item, qty: 2, exp: .now, context: context)
+        try StockService.checkIn(itemId: item.id, qty: 2, exp: .now, store: store)
 
-        XCTAssertThrowsError(try StockService.checkOut(item: item, qty: 10, context: context)) { error in
+        XCTAssertThrowsError(try StockService.checkOut(itemId: item.id, qty: 10, store: store)) { error in
             XCTAssertTrue(error is StockServiceError)
         }
-        XCTAssertEqual(item.onHandTotal, 2, "a failed check-out must not partially mutate stock")
+        XCTAssertEqual(onHandTotal(item), 2, "a failed check-out must not partially mutate stock")
     }
 
     func testRemoveCheckOutRollsBackBalance() throws {
         let item = makeItem()
-        StockService.checkIn(item: item, qty: 10, exp: .now, context: context)
-        let transactions = try StockService.checkOut(item: item, qty: 4, context: context)
+        try StockService.checkIn(itemId: item.id, qty: 10, exp: .now, store: store)
+        let transactions = try StockService.checkOut(itemId: item.id, qty: 4, store: store)
 
-        try StockService.remove(transactions[0], context: context)
+        try StockService.remove(transactions[0], store: store)
 
-        XCTAssertEqual(item.onHandTotal, 10)
+        XCTAssertEqual(onHandTotal(item), 10)
     }
 
     func testRemoveCheckInRollsBackBalance() throws {
         let item = makeItem()
-        let transaction = StockService.checkIn(item: item, qty: 6, exp: .now, context: context)
+        let transaction = try StockService.checkIn(itemId: item.id, qty: 6, exp: .now, store: store)
 
-        try StockService.remove(transaction, context: context)
+        try StockService.remove(transaction, store: store)
 
-        XCTAssertEqual(item.onHandTotal, 0)
-        XCTAssertEqual(item.lots.count, 0)
+        XCTAssertEqual(onHandTotal(item), 0)
+        XCTAssertEqual(lots(item).count, 0)
     }
 
     func testRemoveThrowsAndLeavesTransactionIntactWhenReversalExceedsAvailableStock() throws {
-        // Regression test for the validate-then-apply fix: reversing a check-in used to call
-        // removeFromLots via a `try?` that silently swallowed failure, so a check-in could be
-        // deleted from history while stock that had since moved elsewhere left its effect only
-        // partially undone. Removing a check-in that can no longer be fully reversed must throw
-        // before mutating anything, and the transaction must remain in history.
+        // Regression test: removing a check-in that can no longer be fully reversed (because
+        // stock has since moved elsewhere) must throw before mutating anything, and the
+        // transaction must remain in history.
         let item = makeItem()
-        let checkIn = StockService.checkIn(item: item, qty: 5, exp: .now, context: context)
-        try StockService.checkOut(item: item, qty: 3, context: context)
+        let checkIn = try StockService.checkIn(itemId: item.id, qty: 5, exp: .now, store: store)
+        try StockService.checkOut(itemId: item.id, qty: 3, store: store)
 
-        XCTAssertEqual(item.onHandTotal, 2)
+        XCTAssertEqual(onHandTotal(item), 2)
 
-        XCTAssertThrowsError(try StockService.remove(checkIn, context: context)) { error in
+        XCTAssertThrowsError(try StockService.remove(checkIn, store: store)) { error in
             XCTAssertTrue(error is StockServiceError)
         }
 
-        XCTAssertEqual(item.onHandTotal, 2, "a failed remove must not partially reverse anything")
-        XCTAssertTrue(item.transactions.contains { $0.id == checkIn.id }, "the transaction must remain if it couldn't be safely removed")
+        XCTAssertEqual(onHandTotal(item), 2, "a failed remove must not partially reverse anything")
+        XCTAssertTrue(store.transactions.contains { $0.id == checkIn.id }, "the transaction must remain if it couldn't be safely removed")
     }
 
-    func testEditCheckInQuantityUpdatesBalanceAtomically() throws {
+    func testEditCheckInQuantityUpdatesBalance() throws {
         let item = makeItem()
         let exp = Date(timeIntervalSince1970: 2_000_000_000)
-        let transaction = StockService.checkIn(item: item, qty: 5, exp: exp, context: context)
+        let transaction = try StockService.checkIn(itemId: item.id, qty: 5, exp: exp, store: store)
 
-        try StockService.edit(transaction, newQty: 9, newExp: exp, context: context)
+        try StockService.edit(transaction, newQty: 9, newExp: exp, store: store)
 
-        XCTAssertEqual(item.onHandTotal, 9)
-        XCTAssertEqual(item.lots.count, 1)
+        XCTAssertEqual(onHandTotal(item), 9)
+        XCTAssertEqual(lots(item).count, 1)
     }
 
     func testEditThrowsAndLeavesBalanceUntouchedWhenNewQuantityExceedsAvailableStock() throws {
-        // Regression test for the validate-then-apply fix: the old "reverse, try apply, catch and
-        // try?-restore" pattern could leave stock half-reversed if the restore itself silently
-        // failed. Editing a check-out up to a quantity the item can no longer cover must fail
-        // before mutating anything, leaving both the balance and the original transaction intact.
+        // Regression test: editing a check-out up to a quantity the item can no longer cover must
+        // fail before mutating anything, leaving both the balance and the original transaction
+        // intact.
         let item = makeItem()
-        StockService.checkIn(item: item, qty: 10, exp: .now, context: context)
-        let transactions = try StockService.checkOut(item: item, qty: 4, context: context)
+        try StockService.checkIn(itemId: item.id, qty: 10, exp: .now, store: store)
+        let transactions = try StockService.checkOut(itemId: item.id, qty: 4, store: store)
         let checkOut = transactions[0]
 
-        XCTAssertEqual(item.onHandTotal, 6)
+        XCTAssertEqual(onHandTotal(item), 6)
 
-        XCTAssertThrowsError(try StockService.edit(checkOut, newQty: 100, newExp: checkOut.exp, context: context)) { error in
+        XCTAssertThrowsError(try StockService.edit(checkOut, newQty: 100, newExp: checkOut.exp, store: store)) { error in
             XCTAssertTrue(error is StockServiceError)
         }
 
-        XCTAssertEqual(item.onHandTotal, 6, "a failed edit must not partially reverse or apply anything")
-        XCTAssertEqual(checkOut.qty, 4, "the original transaction must be untouched")
+        XCTAssertEqual(onHandTotal(item), 6, "a failed edit must not partially reverse or apply anything")
+        XCTAssertEqual(store.transactions.first { $0.id == checkOut.id }?.qty, 4, "the original transaction must be untouched")
     }
 }

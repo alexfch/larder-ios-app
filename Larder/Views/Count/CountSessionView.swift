@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// F8/FR-7.1/FR-7.2: starts (or resumes) a stock-take session with Checklist or Scan sweep
 /// entry, a numeric keypad per line, and an optional blind-count mode.
@@ -23,25 +22,31 @@ struct CountSessionView: View {
         }
     }
 
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    /// Starting a session snapshots `item.onHandTotal` — a `lots`-relationship read — for every
-    /// item in the catalog. Prefetching `lots` for the whole batch in one round trip avoids
-    /// lazily faulting each item's lots one at a time while `startSession` builds the count lines.
-    @Query(CountSessionView.candidatesDescriptor) private var allItems: [Item]
-    @Query private var allSessions: [CountSession]
 
     private var inProgressSessions: [CountSession] {
-        allSessions.filter { $0.status == .inProgress }
+        store.countSessions.filter { $0.status == .inProgress }
     }
 
     @State private var session: CountSession?
     @State private var activeSheet: ActiveSheet?
 
-    private static var candidatesDescriptor: FetchDescriptor<Item> {
-        var descriptor = FetchDescriptor<Item>(sortBy: [SortDescriptor(\.name)])
-        descriptor.relationshipKeyPathsForPrefetching = [\.lots]
-        return descriptor
+    private var lines: [CountLine] {
+        guard let session else { return [] }
+        return store.lines(for: session.id)
+    }
+
+    private var sortedLines: [CountLine] {
+        lines.sorted { (store.item(id: $0.itemId)?.name ?? "") < (store.item(id: $1.itemId)?.name ?? "") }
+    }
+
+    private var countedLines: [CountLine] {
+        lines.filter { $0.countedQty != nil }
+    }
+
+    private var differingLines: [CountLine] {
+        lines.filter { $0.countedQty != nil && $0.countedQty != $0.bookQtyAtStart }
     }
 
     var body: some View {
@@ -67,20 +72,20 @@ struct CountSessionView: View {
                             .font(LarderFont.screenTitle())
                     }
                     Spacer()
-                    Text("\(session.countedLines.count)/\(session.lines.count)")
+                    Text("\(countedLines.count)/\(lines.count)")
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Color.larderAccent)
                 }
                 .padding(20)
 
-                ProgressView(value: Double(session.countedLines.count), total: Double(max(session.lines.count, 1)))
+                ProgressView(value: Double(countedLines.count), total: Double(max(lines.count, 1)))
                     .tint(Color.larderAccent)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
 
                 Picker("Mode", selection: Binding(
                     get: { session.mode },
-                    set: { session.mode = $0 }
+                    set: { setMode($0) }
                 )) {
                     Text("Checklist").tag(CountMode.checklist)
                     Text("Scan sweep").tag(CountMode.scanSweep)
@@ -91,7 +96,7 @@ struct CountSessionView: View {
 
                 Toggle("Blind count (hide book quantity)", isOn: Binding(
                     get: { session.blindCount },
-                    set: { session.blindCount = $0 }
+                    set: { newValue in setBlindCount(newValue) }
                 ))
                 .font(.system(size: 13))
                 .padding(.horizontal, 20)
@@ -108,13 +113,18 @@ struct CountSessionView: View {
                 Divider().overlay(Color.larderDivider)
 
                 List {
-                    ForEach(session.sortedLines) { line in
+                    ForEach(sortedLines) { line in
                         Button {
                             if session.mode == .checklist {
                                 activeSheet = .keypad(line)
                             }
                         } label: {
-                            CountLineRow(line: line, blindCount: session.blindCount)
+                            CountLineRow(
+                                line: line,
+                                item: store.item(id: line.itemId),
+                                earliestBestBefore: CatalogDerivation.earliestBestBefore(itemId: line.itemId, transactions: store.transactions),
+                                blindCount: session.blindCount
+                            )
                         }
                         .buttonStyle(.plain)
                     }
@@ -129,11 +139,11 @@ struct CountSessionView: View {
                         }
 
                         HStack {
-                            Text("\(session.countedLines.count) counted · \(session.differingLines.count) differing")
+                            Text("\(countedLines.count) counted · \(differingLines.count) differing")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Color.larderSecondaryText)
                             Spacer()
-                            SecondaryButton(title: "Review", isEnabled: !session.countedLines.isEmpty) {
+                            SecondaryButton(title: "Review", isEnabled: !countedLines.isEmpty) {
                                 activeSheet = .review
                             }
                             .frame(width: 120)
@@ -152,7 +162,7 @@ struct CountSessionView: View {
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .keypad(let line):
-                    CountKeypadSheet(line: line, blindCount: session.blindCount)
+                    CountKeypadSheet(line: line, sessionId: session.id, blindCount: session.blindCount)
                 case .scanner:
                     BarcodeScannerView { code in
                         handleScan(code: code, session: session)
@@ -169,22 +179,41 @@ struct CountSessionView: View {
     private func ensureSession() async {
         if let existing = inProgressSessions.first {
             session = existing
+            store.observeLines(for: existing.id)
         } else {
-            session = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: allItems, context: context)
+            let newSession = await CountSessionService.startSession(mode: .checklist, blindCount: false, items: store.items, store: store)
+            store.observeLines(for: newSession.id)
+            session = newSession
         }
+    }
+
+    private func setMode(_ newMode: CountMode) {
+        guard var session else { return }
+        session.mode = newMode
+        self.session = session
+        try? store.updateCountSession(session)
+    }
+
+    private func setBlindCount(_ newValue: Bool) {
+        guard var session else { return }
+        session.blindCount = newValue
+        self.session = session
+        try? store.updateCountSession(session)
     }
 
     private func handleScan(code: String, session: CountSession) {
         // Resolve the barcode against the catalog first, via the shared, indexed lookup — not a
-        // scan through `session.lines`' `item?.barcode`, which was the same reimplemented-linear-
-        // scan pattern the architecture review flagged at every other scan site.
-        guard let item = Item.match(barcode: code, in: context),
-              let line = session.lines.first(where: { $0.item?.id == item.id }) else {
+        // scan through every line's item barcode, which was the same reimplemented-linear-scan
+        // pattern the architecture review flagged at every other scan site.
+        guard let item = store.item(matchingBarcode: code),
+              let line = lines.first(where: { $0.itemId == item.id }) else {
             activeSheet = nil
             return
         }
         if line.countedQty == nil {
-            line.countedQty = line.bookQtyAtStart
+            var updated = line
+            updated.countedQty = line.bookQtyAtStart
+            try? store.updateCountLine(updated, sessionId: session.id)
             activeSheet = nil
         } else {
             activeSheet = .keypad(line)
@@ -194,7 +223,13 @@ struct CountSessionView: View {
 
 struct CountLineRow: View {
     let line: CountLine
+    let item: Item?
+    let earliestBestBefore: Date?
     let blindCount: Bool
+
+    private var formattedBestBefore: String {
+        earliestBestBefore?.formatted(.iso8601.year().month().day()) ?? "—"
+    }
 
     var body: some View {
         HStack {
@@ -202,20 +237,20 @@ struct CountLineRow: View {
                 .foregroundStyle(line.countedQty != nil ? Color.larderAccent : Color.larderSecondaryText)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(line.item?.name ?? "Deleted item")
+                Text(item?.name ?? "Deleted item")
                     .font(LarderFont.rowTitle())
                 if blindCount && line.countedQty == nil {
-                    Text("best before \(line.item?.earliestBestBefore?.formatted(.iso8601.year().month().day()) ?? "—")")
+                    Text("best before \(formattedBestBefore)")
                         .font(LarderFont.rowSubtitle())
                         .foregroundStyle(Color.larderSecondaryText)
-                } else if let item = line.item {
-                    Text("book \(item.formattedQuantity(line.bookQtyAtStart)) · bb \(item.earliestBestBefore?.formatted(.iso8601.year().month().day()) ?? "—")")
+                } else if let item {
+                    Text("book \(item.formattedQuantity(line.bookQtyAtStart)) · bb \(formattedBestBefore)")
                         .font(LarderFont.rowSubtitle())
                         .foregroundStyle(Color.larderSecondaryText)
                 }
             }
             Spacer()
-            if let counted = line.countedQty, let item = line.item {
+            if let counted = line.countedQty, let item {
                 Text(item.formattedQuantity(counted))
                     .font(.system(size: 15, weight: .bold))
             } else {

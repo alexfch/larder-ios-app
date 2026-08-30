@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// F1: opens by default; lists the 5 items nearest their earliest best-before date.
 struct CheckOutHubView: View {
@@ -23,26 +22,13 @@ struct CheckOutHubView: View {
         }
     }
 
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
-    /// Finding the 5 nearest-expiry items means sorting by `earliestBestBefore`, a value computed
-    /// from the `lots` relationship rather than a stored attribute — SwiftData can't express that
-    /// as a `SortDescriptor`, so this still has to inspect every item in Swift. What a scoped
-    /// `FetchDescriptor` *can* do is prefetch `lots` for the whole batch in one round trip instead
-    /// of lazily faulting each item's lots one at a time as `.onHandTotal`/`.earliestBestBefore`
-    /// are read during that filter/sort.
-    @Query(CheckOutHubView.candidatesDescriptor) private var allItems: [Item]
 
     @State private var activeSheet: ActiveSheet?
 
-    private static var candidatesDescriptor: FetchDescriptor<Item> {
-        var descriptor = FetchDescriptor<Item>(sortBy: [SortDescriptor(\.name)])
-        descriptor.relationshipKeyPathsForPrefetching = [\.lots]
-        return descriptor
-    }
-
     private var shortlist: [Item] {
-        CatalogFiltering.checkOutShortlist(allItems)
+        CatalogFiltering.checkOutShortlist(store.items, transactions: store.transactions)
     }
 
     var body: some View {
@@ -73,7 +59,7 @@ struct CheckOutHubView: View {
                             Button {
                                 activeSheet = .quantity(item)
                             } label: {
-                                HubRow(item: item)
+                                HubRow(item: item, transactions: store.transactions)
                             }
                             .buttonStyle(.plain)
                             Divider().overlay(Color.larderDivider)
@@ -92,14 +78,18 @@ struct CheckOutHubView: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .quantity(let item):
-                QuantitySheetView(item: item, mode: .checkOut, preselectedLot: item.sortedLots.first)
+                QuantitySheetView(
+                    item: item,
+                    mode: .checkOut,
+                    preselectedLot: CatalogDerivation.sortedLots(itemId: item.id, transactions: store.transactions).first
+                )
             case .manualPick:
                 ManualPickListView(mode: .checkOut) { item in
                     activeSheet = .quantity(item)
                 }
             case .scanner:
                 BarcodeScannerView { code in
-                    if let match = Item.match(barcode: code, in: context) {
+                    if let match = store.item(matchingBarcode: code) {
                         activeSheet = .quantity(match)
                     } else {
                         // Unlike Check In, there's no "add new product" path on Check Out for an

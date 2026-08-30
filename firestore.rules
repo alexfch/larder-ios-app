@@ -1,0 +1,70 @@
+rules_version = '2';
+
+// Security Rules for ADR-0003's Firestore-as-source-of-truth schema, corrected for the multi-
+// device pairing design (see the ADR's "Security rules / identity" section): a household has its
+// own document ID and a `memberUids` array rather than being keyed by the auth UID directly, since
+// plain Firebase Anonymous Auth gives every device a distinct, unrelated UID with no built-in way
+// to share one identity across devices.
+//
+// Paste this into the Firebase console under Firestore Database > Rules, or deploy it with the
+// Firebase CLI (`firebase deploy --only firestore:rules`) once the project is set up for that.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Maps a short, human-typed join code to a household ID. Deliberately minimal and readable by
+    // any signed-in device (including one that isn't a member of anything yet) -- that's what lets
+    // a joining device resolve a code to a household ID *before* it has membership, without that
+    // lookup exposing the household's actual data (items/transactions stay gated below). `list` is
+    // not granted, only `get`, so a code can't be found by enumerating this collection.
+    match /joinCodes/{code} {
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.householdId is string;
+      allow update, delete: if false;
+    }
+
+    match /households/{householdId} {
+      allow get: if request.auth != null
+                 && request.auth.uid in resource.data.memberUids;
+      allow list: if false;
+
+      allow create: if request.auth != null
+                    && request.resource.data.memberUids == [request.auth.uid];
+
+      // Joining: the only update a non-member may ever make to a household document is appending
+      // their own uid to memberUids -- nothing else may change in that same write. An existing
+      // member may make any other update.
+      allow update: if request.auth != null
+                    && (
+                      request.auth.uid in resource.data.memberUids
+                      || (
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+                        && request.resource.data.memberUids == resource.data.memberUids.concat([request.auth.uid])
+                      )
+                    );
+
+      allow delete: if false;
+
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.memberUids;
+      }
+
+      match /items/{itemId} {
+        allow read, write: if isMember();
+      }
+
+      match /transactions/{transactionId} {
+        allow read, write: if isMember();
+      }
+
+      match /countSessions/{sessionId} {
+        allow read, write: if isMember();
+
+        match /lines/{lineId} {
+          allow read, write: if isMember();
+        }
+      }
+    }
+  }
+}

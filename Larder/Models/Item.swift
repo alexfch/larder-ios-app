@@ -1,9 +1,12 @@
 import Foundation
-import SwiftData
 
-@Model
-final class Item {
-    var id: UUID
+/// Firestore document shape for `/households/{householdId}/items/{itemId}` (ADR-0003): identity
+/// fields only. No `onHandTotal`/`earliestBestBefore`/`lots` here — those are derived client-side
+/// from `Transaction` documents by `CatalogDerivation`, not stored, since a stored running total
+/// mutated in place would reintroduce exactly the cross-device write-conflict risk ADR-0003 exists
+/// to avoid. See `CatalogStore` for how this and `Transaction` are kept in sync from Firestore.
+struct Item: Identifiable, Codable, Hashable {
+    var id: String
     var name: String
     var barcode: String?
     var kind: ItemKind
@@ -11,23 +14,18 @@ final class Item {
     var unit: String?
     /// Unit-only: free-text noun, e.g. "tin", "jar", "egg"
     var noun: String?
-    @Attribute(.externalStorage) var photoData: Data?
+    /// Cloud Storage for Firebase object path (ADR-0003) — not yet wired up; see `NewProductFormView`.
+    var photoStorageRef: String?
     var createdAt: Date
 
-    @Relationship(deleteRule: .cascade, inverse: \Lot.item)
-    var lots: [Lot] = []
-
-    @Relationship(deleteRule: .cascade, inverse: \Transaction.item)
-    var transactions: [Transaction] = []
-
     init(
-        id: UUID = UUID(),
+        id: String = UUID().uuidString,
         name: String,
         barcode: String? = nil,
         kind: ItemKind,
         unit: String? = nil,
         noun: String? = nil,
-        photoData: Data? = nil,
+        photoStorageRef: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
@@ -36,42 +34,8 @@ final class Item {
         self.kind = kind
         self.unit = unit
         self.noun = noun
-        self.photoData = photoData
+        self.photoStorageRef = photoStorageRef
         self.createdAt = createdAt
-    }
-
-    // MARK: Derived values (deliberately not memoized — see note below)
-
-    /// `onHandTotal`, `earliestBestBefore`, `sortedLots`, and `sortedTransactions` all
-    /// recompute on every access, which the architecture review flagged (Medium priority, but
-    /// explicitly ranked lowest of its performance findings, "opportunistic only").
-    ///
-    /// A stored `@Transient` cache was considered and deliberately rejected: `@Model` synthesizes
-    /// `Observable` conformance over every property, transient or not, and SwiftUI's Observation
-    /// tracks dependencies *dynamically* — it records exactly which properties a computed
-    /// property's getter actually reads during that specific call. A cache-hit path reads the
-    /// transient cache property instead of `lots`, so SwiftUI would stop registering `lots` as a
-    /// dependency on any render that happened to hit the cache — silently breaking reactivity
-    /// (a stale `onHandTotal` shown after a check-out, with no further re-render to fix it) rather
-    /// than just costing CPU. That failure mode is worse than the cost it would save, for
-    /// per-item lot/transaction counts that are small in practice (a home pantry, not a
-    /// warehouse). If profiling ever shows this actually matters, revisit with a scheme that
-    /// still reads `lots`/`transactions` on every access (e.g. a cheap fingerprint check), not one
-    /// that substitutes a differently-tracked property for them.
-    var onHandTotal: Double {
-        lots.reduce(0) { $0 + $1.qty }
-    }
-
-    var earliestBestBefore: Date? {
-        lots.map(\.exp).min()
-    }
-
-    var sortedLots: [Lot] {
-        lots.sorted { $0.exp < $1.exp }
-    }
-
-    var sortedTransactions: [Transaction] {
-        transactions.sorted { $0.occurredAt > $1.occurredAt }
     }
 
     var monogram: String {
@@ -100,19 +64,6 @@ final class Item {
                 return String(format: "%.2f %@", rolledUp, rolledUnit)
             }
         }
-    }
-
-    /// Single source of truth for barcode → catalog-item lookup. The architecture review flagged
-    /// this as reimplemented independently at every scan site (Check In, Check Out, Count scan
-    /// sweep, and the New Product duplicate-guard) — each as `allItems.first(where: { $0.barcode
-    /// == code })`, a linear scan through a `@Query` that had to load the *entire* catalog into
-    /// memory just to filter it in Swift. A predicate-backed `FetchDescriptor` with `fetchLimit =
-    /// 1` lets SwiftData's store do the filtering instead, so a match costs one lookup regardless
-    /// of catalog size, and the callers no longer need an unscoped `@Query` just for this.
-    static func match(barcode: String, in context: ModelContext) -> Item? {
-        var descriptor = FetchDescriptor<Item>(predicate: #Predicate { $0.barcode == barcode })
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
     }
 
     private static func pluralize(_ word: String) -> String {

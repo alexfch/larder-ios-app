@@ -1,10 +1,10 @@
 import SwiftUI
-import SwiftData
 
-/// FR-6.1: reopens pre-filled with the movement's current quantity/date; saving reverses the
-/// old effect and applies the new values as a single atomic update via `StockService.edit`.
+/// FR-6.1: reopens pre-filled with the movement's current quantity/date; saving updates the
+/// transaction document directly via `StockService.edit` (see that method's doc comment for why
+/// this no longer needs a separate "reverse, then reapply" step now that lots are derived).
 struct EditTransactionSheet: View {
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
@@ -58,7 +58,7 @@ struct EditTransactionSheet: View {
     private func save() {
         do {
             let signedQty = transaction.action == .adjust ? (transaction.qty < 0 ? -quantity : quantity) : quantity
-            try StockService.edit(transaction, newQty: signedQty, newExp: expDate, context: context)
+            try StockService.edit(transaction, newQty: signedQty, newExp: expDate, store: store)
             toastCenter.show("Movement updated")
             dismiss()
         } catch {

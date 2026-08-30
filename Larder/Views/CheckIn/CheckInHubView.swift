@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// F2/F4: lists the 5 most recent check-in movements, newest first.
 struct CheckInHubView: View {
@@ -28,13 +27,16 @@ struct CheckInHubView: View {
         }
     }
 
-    @Environment(\.modelContext) private var context
-    @Query(sort: \Transaction.occurredAt, order: .reverse) private var allTransactions: [Transaction]
+    @Environment(CatalogStore.self) private var store
 
     @State private var activeSheet: ActiveSheet?
 
     private var recentCheckIns: [Transaction] {
-        allTransactions.filter { $0.action == .checkIn }.prefix(5).map { $0 }
+        store.transactions
+            .filter { $0.action == .checkIn }
+            .sorted { $0.occurredAt > $1.occurredAt }
+            .prefix(5)
+            .map { $0 }
     }
 
     var body: some View {
@@ -63,11 +65,11 @@ struct CheckInHubView: View {
                     } else {
                         ForEach(recentCheckIns) { transaction in
                             Button {
-                                if let item = transaction.item {
+                                if let item = store.item(id: transaction.itemId) {
                                     activeSheet = .itemDetail(item)
                                 }
                             } label: {
-                                RecentCheckInRow(transaction: transaction)
+                                RecentCheckInRow(transaction: transaction, item: store.item(id: transaction.itemId))
                             }
                             .buttonStyle(.plain)
                             Divider().overlay(Color.larderDivider)
@@ -97,7 +99,7 @@ struct CheckInHubView: View {
                 }
             case .scanner:
                 BarcodeScannerView { code in
-                    if let match = Item.match(barcode: code, in: context) {
+                    if let match = store.item(matchingBarcode: code) {
                         activeSheet = .quantity(match)
                     } else {
                         activeSheet = .newProduct(barcode: code, name: "")
@@ -112,18 +114,19 @@ struct CheckInHubView: View {
 
 struct RecentCheckInRow: View {
     let transaction: Transaction
+    let item: Item?
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.item?.name ?? "Deleted item")
+                Text(item?.name ?? "Deleted item")
                     .font(LarderFont.rowTitle())
                 Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) · \(transaction.occurredAt.formatted(date: .omitted, time: .shortened)) · best before \(transaction.exp.formatted(.iso8601.year().month().day()))")
                     .font(LarderFont.rowSubtitle())
                     .foregroundStyle(Color.larderSecondaryText)
             }
             Spacer()
-            Text("+\(transaction.item?.formattedQuantity(transaction.qty) ?? "")")
+            Text("+\(item?.formattedQuantity(transaction.qty) ?? "")")
                 .font(LarderFont.quantityValue())
                 .foregroundStyle(Color.larderAccent)
         }

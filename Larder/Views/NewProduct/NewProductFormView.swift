@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import PhotosUI
 import UIKit
 import AVFoundation
@@ -7,7 +6,7 @@ import AVFoundation
 /// FR-3.1/FR-3.2: captures name, barcode (optional), unit/bulk kind, quantity, expiry, and an
 /// optional photo. Saving performs the item's initial check-in.
 struct NewProductFormView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
@@ -243,22 +242,30 @@ struct NewProductFormView: View {
         // architecture review's recommendation to do this as an explicit app-level check rather
         // than a SwiftData @Attribute(.unique) (whose autosave-merge behavior isn't validated
         // for this app yet).
-        if let normalizedBarcode, let existing = Item.match(barcode: normalizedBarcode, in: context) {
+        if let normalizedBarcode, let existing = store.item(matchingBarcode: normalizedBarcode) {
             barcodeError = "This barcode is already used by “\(existing.name)”. Check stock in against that item instead of adding a duplicate."
             return
         }
 
+        // `photoData` is deliberately not attached here yet: ADR-0003 moves item photos to Cloud
+        // Storage for Firebase (a separate product from Firestore, not yet integrated), rather
+        // than storing raw bytes on the document. The picker above stays so the flow reads
+        // correctly and is ready to wire up once that integration lands, but nothing captured
+        // here is persisted anywhere yet.
         let item = Item(
             name: name,
             barcode: normalizedBarcode,
             kind: kind,
             unit: kind == .bulk ? bulkUnit : nil,
-            noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil,
-            photoData: photoData
+            noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil
         )
-        context.insert(item)
-        StockService.checkIn(item: item, qty: quantity, exp: expDate, context: context)
-        toastCenter.show("\(item.name) added to Stock")
-        dismiss()
+        do {
+            try store.addItem(item)
+            try StockService.checkIn(itemId: item.id, qty: quantity, exp: expDate, store: store)
+            toastCenter.show("\(item.name) added to Stock")
+            dismiss()
+        } catch {
+            barcodeError = error.localizedDescription
+        }
     }
 }

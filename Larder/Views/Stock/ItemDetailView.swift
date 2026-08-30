@@ -1,9 +1,8 @@
 import SwiftUI
-import SwiftData
 
 /// FR-5.2/FR-6.1: on-hand total, earliest best-before, every batch, and full swipeable history.
 struct ItemDetailView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
@@ -29,6 +28,14 @@ struct ItemDetailView: View {
 
     @State private var activeSheet: ActiveSheet?
 
+    private var sortedLots: [Lot] {
+        CatalogDerivation.sortedLots(itemId: item.id, transactions: store.transactions)
+    }
+
+    private var sortedTransactions: [Transaction] {
+        CatalogDerivation.sortedTransactions(itemId: item.id, transactions: store.transactions)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
@@ -40,14 +47,16 @@ struct ItemDetailView: View {
                         .foregroundStyle(Color.larderSecondaryText)
                 }
                 Spacer()
-                ItemThumbnail(photoData: item.photoData, monogram: item.monogram, size: 72)
+                // Photos aren't synced to Cloud Storage yet (see NewProductFormView), so this is
+                // always the monogram fallback for now.
+                ItemThumbnail(photoData: nil, monogram: item.monogram, size: 72)
             }
             .padding(20)
 
             HStack(spacing: 0) {
-                statBlock(value: item.formattedQuantity(item.onHandTotal), label: "On Hand")
+                statBlock(value: item.formattedQuantity(sortedLots.reduce(0) { $0 + $1.qty }), label: "On Hand")
                 Divider().frame(height: 60).overlay(Color.larderDivider)
-                if let earliest = item.earliestBestBefore {
+                if let earliest = sortedLots.map(\.exp).min() {
                     statBlock(value: "\(earliest.formatted(.iso8601.year().month().day())) (\(earliest.relativeDayLabel))", label: "Earliest Best Before")
                 } else {
                     statBlock(value: "—", label: "Earliest Best Before")
@@ -60,12 +69,12 @@ struct ItemDetailView: View {
 
             List {
                 Section {
-                    if item.sortedLots.isEmpty {
+                    if sortedLots.isEmpty {
                         Text("Nothing on the shelf. Check some in.")
                             .foregroundStyle(Color.larderSecondaryText)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(item.sortedLots) { lot in
+                        ForEach(sortedLots) { lot in
                             HStack {
                                 Text(item.formattedQuantity(lot.qty))
                                     .font(LarderFont.rowTitle())
@@ -82,13 +91,13 @@ struct ItemDetailView: View {
                 }
 
                 Section {
-                    if item.sortedTransactions.isEmpty {
+                    if sortedTransactions.isEmpty {
                         Text("No movements yet.")
                             .foregroundStyle(Color.larderSecondaryText)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(item.sortedTransactions) { transaction in
-                            HistoryRow(transaction: transaction)
+                        ForEach(sortedTransactions) { transaction in
+                            HistoryRow(transaction: transaction, item: item)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         removeTransaction(transaction)
@@ -129,7 +138,7 @@ struct ItemDetailView: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .checkOut:
-                QuantitySheetView(item: item, mode: .checkOut, preselectedLot: item.sortedLots.first)
+                QuantitySheetView(item: item, mode: .checkOut, preselectedLot: sortedLots.first)
             case .checkIn:
                 QuantitySheetView(item: item, mode: .checkIn)
             case .editTransaction(let transaction):
@@ -152,7 +161,7 @@ struct ItemDetailView: View {
 
     private func removeTransaction(_ transaction: Transaction) {
         do {
-            try StockService.remove(transaction, context: context)
+            try StockService.remove(transaction, store: store)
             toastCenter.show("Movement removed — balance rolled back")
         } catch {
             toastCenter.show(error.localizedDescription)
@@ -162,6 +171,7 @@ struct ItemDetailView: View {
 
 struct HistoryRow: View {
     let transaction: Transaction
+    let item: Item?
 
     var body: some View {
         HStack {
@@ -186,7 +196,7 @@ struct HistoryRow: View {
     }
 
     private var signedQuantity: String {
-        let magnitude = transaction.item?.formattedQuantity(abs(transaction.qty)) ?? "\(abs(transaction.qty))"
+        let magnitude = item?.formattedQuantity(abs(transaction.qty)) ?? "\(abs(transaction.qty))"
         let isNegative = transaction.action == .checkOut || (transaction.action == .adjust && transaction.qty < 0)
         return (isNegative ? "−" : "+") + magnitude
     }

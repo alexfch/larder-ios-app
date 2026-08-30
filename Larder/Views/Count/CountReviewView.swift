@@ -1,10 +1,9 @@
 import SwiftUI
-import SwiftData
 
 /// F9/FR-7.3: shows only the lines that differ from book, each with a reason chip; Apply
 /// writes one signed adjustment transaction per line, Discard leaves everything untouched.
 struct CountReviewView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
@@ -15,10 +14,16 @@ struct CountReviewView: View {
 
     @State private var errorMessage: String?
 
+    private var lines: [CountLine] { store.lines(for: session.id) }
+
+    private var differingLines: [CountLine] {
+        lines.filter { $0.countedQty != nil && $0.countedQty != $0.bookQtyAtStart }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if session.differingLines.isEmpty {
+                if differingLines.isEmpty {
                     Spacer()
                     Text("Nothing to adjust — every counted line matched the book.")
                         .foregroundStyle(Color.larderSecondaryText)
@@ -38,8 +43,12 @@ struct CountReviewView: View {
                     .padding(20)
                 } else {
                     List {
-                        ForEach(session.differingLines) { line in
-                            AdjustLineRow(line: line)
+                        ForEach(differingLines) { line in
+                            AdjustLineRow(
+                                line: line,
+                                item: store.item(id: line.itemId),
+                                onSelectReason: { reason in setReason(reason, for: line) }
+                            )
                         }
                     }
                     .listStyle(.plain)
@@ -68,9 +77,15 @@ struct CountReviewView: View {
         }
     }
 
+    private func setReason(_ reason: AdjustReason, for line: CountLine) {
+        var updated = line
+        updated.reasonTag = reason.rawValue
+        try? store.updateCountLine(updated, sessionId: session.id)
+    }
+
     private func apply() {
         do {
-            try CountSessionService.apply(session, context: context)
+            try CountSessionService.apply(session, lines: lines, items: store.items, store: store)
             toastCenter.show("Count applied — balances updated")
             dismiss()
             onFinish?()
@@ -80,23 +95,29 @@ struct CountReviewView: View {
     }
 
     private func discard() {
-        CountSessionService.discard(session)
-        toastCenter.show("Count discarded")
-        dismiss()
-        onFinish?()
+        do {
+            try CountSessionService.discard(session, store: store)
+            toastCenter.show("Count discarded")
+            dismiss()
+            onFinish?()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
 struct AdjustLineRow: View {
     let line: CountLine
+    let item: Item?
+    let onSelectReason: (AdjustReason) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(line.item?.name ?? "Deleted item")
+                    Text(item?.name ?? "Deleted item")
                         .font(LarderFont.rowTitle())
-                    if let item = line.item {
+                    if let item {
                         Text("book \(item.formattedQuantity(line.bookQtyAtStart)) → counted \(item.formattedQuantity(line.countedQty ?? line.bookQtyAtStart))")
                             .font(.system(size: 13))
                             .foregroundStyle(Color.larderSecondaryText)
@@ -112,7 +133,7 @@ struct AdjustLineRow: View {
                 HStack(spacing: 8) {
                     ForEach(AdjustReason.allCases) { reason in
                         BatchChip(label: reason.rawValue, isSelected: line.reasonTag == reason.rawValue) {
-                            line.reasonTag = reason.rawValue
+                            onSelectReason(reason)
                         }
                     }
                 }
@@ -122,7 +143,7 @@ struct AdjustLineRow: View {
     }
 
     private var signedDelta: String {
-        let magnitude = line.item?.formattedQuantity(abs(line.delta)) ?? "\(abs(line.delta))"
+        let magnitude = item?.formattedQuantity(abs(line.delta)) ?? "\(abs(line.delta))"
         return (line.delta >= 0 ? "+" : "−") + magnitude
     }
 }

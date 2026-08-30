@@ -1,80 +1,87 @@
 import SwiftUI
-import SwiftData
+import FirebaseCore
 
 @main
 struct LarderApp: App {
-    let modelContainer: ModelContainer = Self.makeModelContainer()
+    @State private var toastCenter: ToastCenter
+    @State private var householdSession: HouseholdSession
+    /// Created exactly once, the first time the household resolves to `.ready` — not inline in
+    /// `body`, which SwiftUI re-invokes on every state change; constructing a fresh `CatalogStore`
+    /// on each of those would tear down and reattach its Firestore listeners constantly instead
+    /// of once per app session.
+    @State private var catalogStore: CatalogStore?
 
-    @State private var toastCenter = ToastCenter()
+    /// Configures Firebase (Firestore + Auth, per ADR-0003) before any view or service touches
+    /// those SDKs. No `AppDelegate`/`@UIApplicationDelegateAdaptor` — this app has never had one,
+    /// and `FirebaseApp.configure()` is a plain synchronous call that has no need for UIKit
+    /// app-lifecycle hooks, so adding one just for this would be unnecessary ceremony.
+    ///
+    /// `toastCenter`/`householdSession` are assigned explicitly here, in this order, rather than
+    /// via `= ToastCenter()`/`= HouseholdSession()` default-value expressions on the property
+    /// declarations: a struct's stored-property default values are evaluated to satisfy definite
+    /// initialization *before* a custom `init`'s own body runs, not after. `HouseholdSession`'s
+    /// own `init` constructs `Firestore.firestore()`, so a default-value expression for it would
+    /// have run — and crashed with "call FirebaseApp.configure() first" — before this body's
+    /// `FirebaseApp.configure()` call ever executed. Explicit assignment here guarantees the real
+    /// order: configure, then construct anything that touches Firebase.
+    init() {
+        FirebaseApp.configure()
+        _toastCenter = State(initialValue: ToastCenter())
+        _householdSession = State(initialValue: HouseholdSession())
+    }
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
-                .environment(toastCenter)
-                .overlay(ToastOverlay(message: toastCenter.message))
-                // The design system (Color.larderBackground etc.) is light-only for now;
-                // lock appearance so Form-based screens don't flip to a native dark look
-                // that clashes with the rest of the app. Revisit if real Dark Mode support
-                // gets built later.
-                .preferredColorScheme(.light)
-        }
-        .modelContainer(modelContainer)
-    }
-
-    /// Builds the app's `ModelContainer`, recovering from a corrupted or otherwise unopenable
-    /// store instead of crash-looping on every launch. `try!` here used to mean any store
-    /// problem — a corrupted SQLite file, a disk error, a schema SwiftData can't reconcile — was
-    /// unrecoverable: the app would crash in `init`, before any UI (or even a crash-reporting
-    /// screen) could show, every single time it launched. Now a failed open resets the store and
-    /// retries once with a fresh, empty one; only if that second attempt also fails — meaning the
-    /// problem isn't the store's contents at all, e.g. a full disk or a permissions failure — does
-    /// this still terminate, since there is genuinely no usable container to hand back.
-    private static func makeModelContainer() -> ModelContainer {
-        let schema = Schema([Item.self, Lot.self, Transaction.self, CountSession.self, CountLine.self])
-        let configuration = ModelConfiguration(schema: schema)
-
-        applyFileProtection(to: configuration)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [configuration])
-        } catch {
-            assertionFailure("ModelContainer failed to load, resetting the store: \(error)")
-            resetStore(at: configuration.url)
-            do {
-                return try ModelContainer(for: schema, configurations: [configuration])
-            } catch {
-                fatalError("ModelContainer still couldn't be created after resetting the store: \(error)")
+            // Gate the app on household resolution (ADR-0003, Phase 4): sign in anonymously, then
+            // either restore this device's known household, walk it through create/join, or show
+            // the one-time join-code confirmation right after creating one. Only once a household
+            // is resolved does a `CatalogStore` exist at all — the catalog itself now lives
+            // entirely in Firestore, scoped to that household, with SwiftData retired.
+            Group {
+                switch householdSession.state {
+                case .resolving:
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.larderBackground.ignoresSafeArea())
+                case .needsSetup, .error:
+                    HouseholdSetupView(session: householdSession)
+                case .ready:
+                    if let code = householdSession.justCreatedJoinCode {
+                        HouseholdCreatedConfirmationView(joinCode: code) {
+                            householdSession.acknowledgeHouseholdCreated()
+                        }
+                    } else if let catalogStore {
+                        RootTabView()
+                            .environment(catalogStore)
+                    } else {
+                        // Momentary: `.onChange` below hasn't constructed `catalogStore` yet.
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.larderBackground.ignoresSafeArea())
+                    }
+                }
+            }
+            .environment(toastCenter)
+            .overlay(ToastOverlay(message: toastCenter.message))
+            // The design system (Color.larderBackground etc.) is light-only for now;
+            // lock appearance so Form-based screens don't flip to a native dark look
+            // that clashes with the rest of the app. Revisit if real Dark Mode support
+            // gets built later.
+            .preferredColorScheme(.light)
+            .task {
+                await householdSession.start()
+            }
+            // `.task(id:)` re-runs when `householdSession.householdId` changes value (nil ->
+            // some id, once, for the life of the session) and is otherwise a no-op -- a more
+            // reliable way to say "construct this once a value becomes available" than
+            // `.onChange(of:)`, which compares against the *previous* value and can miss a
+            // transition that lands in the same update cycle as other state changes (as it did
+            // here: `justCreatedJoinCode` and `state` both change out from under `createHousehold()`
+            // in the same async hop).
+            .task(id: householdSession.householdId) {
+                guard let householdId = householdSession.householdId, catalogStore == nil else { return }
+                catalogStore = CatalogStore(householdId: householdId)
             }
         }
-    }
-
-    /// Moves the store aside — the SQLite main file plus its `-wal`/`-shm` sidecar files — rather
-    /// than deleting it outright, so a corrupted store can still be pulled off the device for a
-    /// postmortem instead of being silently destroyed.
-    private static func resetStore(at url: URL) {
-        let fileManager = FileManager.default
-        let timestamp = Int(Date().timeIntervalSince1970)
-        for suffix in ["", "-wal", "-shm"] {
-            let source = URL(fileURLWithPath: url.path + suffix)
-            guard fileManager.fileExists(atPath: source.path) else { continue }
-            let destination = URL(fileURLWithPath: url.path + suffix + ".corrupted-\(timestamp)")
-            try? fileManager.moveItem(at: source, to: destination)
-        }
-    }
-
-    /// Explicit `NSFileProtectionKey` on the store's containing directory, so sidecar files
-    /// (`-wal`/`-shm`, written after the first insert) inherit it too. This app's data — pantry
-    /// contents and optional item photos — isn't highly sensitive, but leaving protection
-    /// implicit was flagged by the architecture review. `.completeUntilFirstUserAuthentication`
-    /// keeps the store unreadable before the device's first unlock after boot while still
-    /// allowing this foreground-only app to read/write normally once unlocked, without the
-    /// stricter `.complete` class's risk of locking the store mid-session if the device
-    /// auto-locks while the app is suspended in the background.
-    private static func applyFileProtection(to configuration: ModelConfiguration) {
-        let directory = configuration.url.deletingLastPathComponent()
-        try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: directory.path
-        )
     }
 }

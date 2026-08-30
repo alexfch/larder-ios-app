@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import UniformTypeIdentifiers
 
 /// FR-5.1: every item, sorted soonest-expiring first (no-batch items last), with search and
@@ -7,9 +6,8 @@ import UniformTypeIdentifiers
 struct StockListView: View {
     /// Single source of truth for "what's on screen right now," replacing two independent
     /// `@State` optionals/booleans each backing its own `.sheet()` modifier — the structural
-    /// pattern the architecture review flagged as repeated across 5 screens. `fileprivate` (not
-    /// `private`) so `StockResultsView` below, which owns the actual row list, can share it.
-    fileprivate enum ActiveSheet: Identifiable {
+    /// pattern the architecture review flagged as repeated across 5 screens.
+    private enum ActiveSheet: Identifiable {
         case itemDetail(Item)
         case countSession
 
@@ -21,9 +19,8 @@ struct StockListView: View {
         }
     }
 
-    @Environment(\.modelContext) private var context
+    @Environment(CatalogStore.self) private var store
     @Environment(ToastCenter.self) private var toastCenter
-    @Query(StockListView.allItemsDescriptor) private var allItems: [Item]
 
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
@@ -35,17 +32,26 @@ struct StockListView: View {
     @State private var isImportingBackup = false
     @State private var backupErrorMessage: String?
 
-    /// Prefetches `lots` for the whole catalog in one round trip, since `expiringSoonCount` below
-    /// (and every row's badge) reads `.lots` per item — avoids lazily faulting each item's lots
-    /// one at a time.
-    private static var allItemsDescriptor: FetchDescriptor<Item> {
-        var descriptor = FetchDescriptor<Item>()
-        descriptor.relationshipKeyPathsForPrefetching = [\.lots]
-        return descriptor
+    /// Uses the same batch-precomputed summary `CatalogFiltering.stockVisibleItems` uses below,
+    /// rather than re-deriving lots per item, for the same reason: at catalog scale that added up
+    /// to a measurable, avoidable cost (see `CatalogDerivation.lotsByItem`'s doc comment).
+    private var expiringSoonCount: Int {
+        let summaries = CatalogDerivation.lotsByItem(transactions: store.transactions)
+        return store.items.filter { summaries[$0.id]?.isExpiringSoon ?? false }.count
     }
 
-    private var expiringSoonCount: Int {
-        allItems.filter { item in item.sortedLots.contains { $0.isExpiringSoon } }.count
+    /// The whole (5,000-item-capped) catalog is already synced locally via `CatalogStore`
+    /// (ADR-0003), so this filters/sorts client-side rather than scoping a fetch predicate the
+    /// way the old `@Query`-based version did.
+    private var visibleItems: [Item] {
+        var items = store.items
+        if debouncedSearchText.count >= 2 {
+            items = items.filter {
+                $0.name.localizedStandardContains(debouncedSearchText)
+                    || ($0.barcode?.localizedStandardContains(debouncedSearchText) ?? false)
+            }
+        }
+        return CatalogFiltering.stockVisibleItems(items, transactions: store.transactions, expiringOnly: expiringOnly)
     }
 
     var body: some View {
@@ -89,11 +95,26 @@ struct StockListView: View {
 
             Divider().overlay(Color.larderDivider)
 
-            // Search text (already debounced below) drives StockResultsView's own @Query, scoped
-            // to a name/barcode predicate once it's long enough to be selective — the "unfiltered
-            // @Query" half of the architecture review's finding. See that view's doc comment for
-            // why the no-search case still has to fetch the whole catalog.
-            StockResultsView(searchText: debouncedSearchText, expiringOnly: expiringOnly, activeSheet: $activeSheet)
+            if visibleItems.isEmpty {
+                Spacer()
+                Text("No items match.")
+                    .foregroundStyle(Color.larderSecondaryText)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(visibleItems) { item in
+                            Button {
+                                activeSheet = .itemDetail(item)
+                            } label: {
+                                StockRow(item: item, transactions: store.transactions)
+                            }
+                            .buttonStyle(.plain)
+                            Divider().overlay(Color.larderDivider)
+                        }
+                    }
+                }
+            }
         }
         .background(Color.larderBackground.ignoresSafeArea())
         .sheet(item: $activeSheet) { sheet in
@@ -105,10 +126,10 @@ struct StockListView: View {
             }
         }
         .task(id: searchText) {
-            // Debounce: at catalog scale, reconstructing StockResultsView's @Query (and its
-            // Swift-side sort) on every keystroke is real, avoidable work. `.task(id:)` cancels
-            // the previous sleep automatically when `searchText` changes again before it elapses,
-            // so only a pause in typing actually commits a new search.
+            // Debounce: at catalog scale, re-filtering on every keystroke is real, avoidable
+            // work. `.task(id:)` cancels the previous sleep automatically when `searchText`
+            // changes again before it elapses, so only a pause in typing actually commits a new
+            // search.
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             debouncedSearchText = searchText
@@ -146,7 +167,7 @@ struct StockListView: View {
 
     private func exportBackup() {
         do {
-            exportDocument = BackupDocument(data: try BackupService.export(context: context))
+            exportDocument = BackupDocument(data: try BackupService.export(store: store))
             isExportingBackup = true
         } catch {
             backupErrorMessage = error.localizedDescription
@@ -164,7 +185,7 @@ struct StockListView: View {
 
         do {
             let data = try Data(contentsOf: url)
-            let summary = try BackupService.importBackup(data, context: context)
+            let summary = try BackupService.importBackup(data, store: store)
             if summary.imported == 0 {
                 toastCenter.show("Nothing new to import — already up to date")
             } else {
@@ -182,71 +203,19 @@ struct StockListView: View {
     }
 }
 
-/// Renders the filtered/sorted stock list. See `StockListView` for why `searchText` here is
-/// already debounced and how it scopes this view's own `@Query`.
-///
-/// The base (no-search) case still fetches every item: sorting by soonest-expiry means reading
-/// `earliestBestBefore`, a value computed from the `lots` relationship rather than a stored
-/// attribute, so SwiftData can't express that ordering as a `SortDescriptor` — every item has to
-/// be inspected in Swift regardless of query scope. Once there's enough search text to be
-/// selective, though, narrowing the *fetch* to matching items first (rather than fetching
-/// everything and filtering in Swift) means the expensive per-item relationship read only happens
-/// for items that could actually be shown.
-private struct StockResultsView: View {
-    @Query private var items: [Item]
-    let expiringOnly: Bool
-    @Binding var activeSheet: StockListView.ActiveSheet?
-
-    init(searchText: String, expiringOnly: Bool, activeSheet: Binding<StockListView.ActiveSheet?>) {
-        self.expiringOnly = expiringOnly
-        self._activeSheet = activeSheet
-
-        var descriptor: FetchDescriptor<Item>
-        if searchText.count >= 2 {
-            descriptor = FetchDescriptor<Item>(predicate: #Predicate<Item> { item in
-                item.name.localizedStandardContains(searchText) || (item.barcode?.localizedStandardContains(searchText) ?? false)
-            })
-        } else {
-            descriptor = FetchDescriptor<Item>()
-        }
-        descriptor.relationshipKeyPathsForPrefetching = [\.lots]
-        _items = Query(descriptor)
-    }
-
-    private var visibleItems: [Item] {
-        CatalogFiltering.stockVisibleItems(items, expiringOnly: expiringOnly)
-    }
-
-    var body: some View {
-        if visibleItems.isEmpty {
-            Spacer()
-            Text("No items match.")
-                .foregroundStyle(Color.larderSecondaryText)
-            Spacer()
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(visibleItems) { item in
-                        Button {
-                            activeSheet = .itemDetail(item)
-                        } label: {
-                            StockRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                        Divider().overlay(Color.larderDivider)
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct StockRow: View {
     let item: Item
+    let transactions: [Transaction]
+
+    private var lots: [Lot] {
+        CatalogDerivation.sortedLots(itemId: item.id, transactions: transactions)
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            ItemThumbnail(photoData: item.photoData, monogram: item.monogram)
+            // Photos aren't synced to Cloud Storage yet (see NewProductFormView), so this is
+            // always the monogram fallback for now.
+            ItemThumbnail(photoData: nil, monogram: item.monogram)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)
@@ -255,11 +224,11 @@ struct StockRow: View {
                     .font(LarderFont.rowSubtitle())
                     .foregroundStyle(Color.larderSecondaryText)
                 HStack(spacing: 8) {
-                    if let earliest = item.earliestBestBefore {
+                    if let earliest = lots.map(\.exp).min() {
                         ExpiryBadge(date: earliest)
                     }
-                    if item.lots.count > 1 {
-                        OutlineTag(text: "\(item.lots.count) batches")
+                    if lots.count > 1 {
+                        OutlineTag(text: "\(lots.count) batches")
                     }
                 }
             }
@@ -278,14 +247,11 @@ struct StockRow: View {
         .padding(.vertical, 14)
     }
 
-    /// `onHandTotal` sums the `lots` relationship and `formattedQuantity` re-derives a string
-    /// from it — real work, previously done twice per row (once for the value, once for the
-    /// unit) by two separate methods that each called `item.formattedQuantity(item.onHandTotal)`
-    /// independently. Splitting once here, within a single `body` evaluation, halves that work
-    /// with no correctness risk, unlike caching across renders on the model itself (see
-    /// `Item.swift`'s doc comment on why that's deliberately not done).
+    /// `onHandTotal` sums the derived lots and `formattedQuantity` re-derives a string from it —
+    /// real work, done once here per row rather than twice (value + unit) via two separate calls.
     private var quantityParts: (value: String, unit: String) {
-        let full = item.formattedQuantity(item.onHandTotal)
+        let total = lots.reduce(0) { $0 + $1.qty }
+        let full = item.formattedQuantity(total)
         let parts = full.components(separatedBy: " ")
         let value = parts.first ?? full
         let unit = parts.count > 1 ? parts.dropFirst().joined(separator: " ") : ""
