@@ -42,9 +42,9 @@ struct CheckInHubView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(
-                eyebrow: "Pantry · \(todayEyebrowDate())",
+                eyebrow: "",
                 title: "Check In",
-                subtitle: "Scan the barcode, or add it by hand if the pack has none."
+                subtitle: ""
             )
 
             Divider().overlay(Color.larderDivider)
@@ -52,7 +52,6 @@ struct CheckInHubView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Recently checked in")
-                        .trackedUppercase()
                         .font(LarderFont.eyebrow())
                         .foregroundStyle(Color.larderSecondaryText)
                         .padding(.horizontal, 20)
@@ -128,7 +127,7 @@ struct RecentCheckInRow: View {
             Spacer()
             Text("+\(item?.formattedQuantity(transaction.qty) ?? "")")
                 .font(LarderFont.quantityValue())
-                .foregroundStyle(Color.larderAccent)
+                .foregroundStyle(Color.larderInk)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)

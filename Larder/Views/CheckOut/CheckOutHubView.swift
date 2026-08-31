@@ -34,9 +34,9 @@ struct CheckOutHubView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(
-                eyebrow: "Pantry · \(todayEyebrowDate())",
+                eyebrow: "",
                 title: "Check Out",
-                subtitle: "Scan what you are taking, or pick it from the list."
+                subtitle: ""
             )
 
             Divider().overlay(Color.larderDivider)
@@ -44,7 +44,6 @@ struct CheckOutHubView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Use these first — earliest best before")
-                        .trackedUppercase()
                         .font(LarderFont.eyebrow())
                         .foregroundStyle(Color.larderSecondaryText)
                         .padding(.horizontal, 20)
