@@ -16,45 +16,57 @@ struct BarcodeScannerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Scan")
-                    .font(LarderFont.screenTitle())
-                Spacer()
-                Button("Cancel") { dismiss() }
-            }
-            .padding(20)
+        // Full-screen sheet again (no `.presentationDetents`), but the camera preview itself is
+        // capped to the top half via `GeometryReader` — the only clean way in SwiftUI to size a
+        // view to a fraction of the available space, since a plain `.frame` can't express "50%".
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Scan")
+                        .font(LarderFont.screenTitle())
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                }
+                .padding(20)
 
-            if cameraAvailable {
-                ZStack {
-                    CameraPreview { code in
-                        onCode(code)
+                if cameraAvailable {
+                    ZStack {
+                        CameraPreview { code in
+                            onCode(code)
+                        }
+                        // Wide/short reticle matching a barcode's own proportions, rather than
+                        // the old uniform-padding square.
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.larderAccent, lineWidth: 3)
+                            .aspectRatio(2.4, contentMode: .fit)
+                            .padding(.horizontal, 32)
                     }
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.larderAccent, lineWidth: 3)
-                        .padding(60)
-                }
-            } else {
-                Spacer()
-                VStack(spacing: 16) {
-                    Image(systemName: "camera.metering.unknown")
-                        .font(.system(size: 40))
-                        .foregroundStyle(Color.larderSecondaryText)
-                    Text("Camera not available in Simulator.\nEnter a barcode to simulate a scan.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(Color.larderSecondaryText)
-                    TextField("Barcode", text: $manualCode)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.center)
-                        .padding(12)
-                        .overlay(Rectangle().strokeBorder(Color.larderDivider, lineWidth: 1))
+                    .frame(height: geometry.size.height / 3)
+                    .clipped()
+
+                    Spacer()
+                } else {
+                    Spacer()
+                    VStack(spacing: 16) {
+                        Image(systemName: "camera.metering.unknown")
+                            .font(.system(size: 40))
+                            .foregroundStyle(Color.larderSecondaryText)
+                        Text("Camera not available in Simulator.\nEnter a barcode to simulate a scan.")
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color.larderSecondaryText)
+                        TextField("Barcode", text: $manualCode)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.center)
+                            .padding(12)
+                            .overlay(Rectangle().strokeBorder(Color.larderDivider, lineWidth: 1))
+                            .padding(.horizontal, 60)
+                        PrimaryButton(title: "Simulate Scan", isEnabled: !manualCode.isEmpty) {
+                            onCode(manualCode)
+                        }
                         .padding(.horizontal, 60)
-                    PrimaryButton(title: "Simulate Scan", isEnabled: !manualCode.isEmpty) {
-                        onCode(manualCode)
                     }
-                    .padding(.horizontal, 60)
+                    Spacer()
                 }
-                Spacer()
             }
         }
         .background(Color.larderBackground.ignoresSafeArea())
