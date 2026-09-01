@@ -56,7 +56,7 @@ struct StockListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScreenHeader(eyebrow: "In the pantry", title: "Stock") {
+            ScreenHeader(eyebrow: store.joinCode.map { "Household \($0)" } ?? "", title: "Stock") {
                 HStack(spacing: 12) {
                     Menu {
                         Button("Export Backup") { exportBackup() }

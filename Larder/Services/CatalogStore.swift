@@ -45,6 +45,10 @@ final class CatalogStore: CatalogWriting {
     private(set) var items: [Item] = []
     private(set) var transactions: [Transaction] = []
     private(set) var countSessions: [CountSession] = []
+    /// This household's short pairing code (see `HouseholdSession`/ADR-0003), for screens that
+    /// want to display it (e.g. as a reminder of which household you're in, or to read off to
+    /// pair a second device) without needing to hold onto it separately.
+    private(set) var joinCode: String?
     private var countLinesBySession: [String: [CountLine]] = [:]
 
     private let firestore = FirestoreDatabase.instance()
@@ -88,6 +92,15 @@ final class CatalogStore: CatalogWriting {
                 return
             }
             self.countSessions = snapshot?.documents.compactMap { try? $0.data(as: CountSession.self) } ?? []
+        })
+
+        listeners.append(householdRef.addSnapshotListener { [weak self] snapshot, error in
+            guard let self else { return }
+            if let error {
+                assertionFailure("household listener failed: \(error)")
+                return
+            }
+            self.joinCode = snapshot?.data()?["joinCode"] as? String
         })
     }
 

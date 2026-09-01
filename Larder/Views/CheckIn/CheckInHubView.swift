@@ -42,7 +42,7 @@ struct CheckInHubView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(
-                eyebrow: "",
+                eyebrow: store.joinCode.map { "Household \($0)" } ?? "",
                 title: "Check In",
                 subtitle: ""
             )
