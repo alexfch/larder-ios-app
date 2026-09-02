@@ -13,6 +13,8 @@ struct RootTabView: View {
                     CheckInHubView()
                 case .stock:
                     StockListView()
+                case .settings:
+                    SettingsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -62,6 +62,19 @@ final class AuthSession {
         }
     }
 
+    /// Signs out of Firebase Auth and returns to `.needsSignIn`, which `LarderApp` reacts to by
+    /// tearing down `householdSession` and `catalogStore` -- everything downstream of identity is
+    /// re-derived from scratch the next time someone signs in, rather than trying to reset each
+    /// piece in place.
+    func signOut() {
+        do {
+            try Auth.auth().signOut()
+            state = .needsSignIn
+        } catch {
+            state = .error(error.localizedDescription)
+        }
+    }
+
     /// Maps Firebase's `AuthErrorCode` cases to plain, actionable copy instead of surfacing SDK
     /// error strings verbatim -- the default `localizedDescription` for e.g. `.weakPassword` is
     /// technically accurate but reads like an SDK error, not app copy.

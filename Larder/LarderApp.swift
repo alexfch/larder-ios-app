@@ -63,6 +63,7 @@ struct LarderApp: App {
                 }
             }
             .environment(toastCenter)
+            .environment(authSession)
             .overlay(ToastOverlay(message: toastCenter.message))
             // The design system (Color.larderBackground etc.) is light-only for now;
             // lock appearance so Form-based screens don't flip to a native dark look
@@ -87,8 +88,19 @@ struct LarderApp: App {
             // below now constructs it directly in its own `init`, which SwiftUI guarantees runs
             // exactly once for a given household id, with no async race to lose.
             .task(id: authSession.uid) {
-                guard authSession.uid != nil else { return }
-                await householdSession.start()
+                if authSession.uid != nil {
+                    await householdSession.start()
+                } else {
+                    // Signed out (via `SettingsView`'s Log Out, or never signed in yet). Replacing
+                    // `householdSession` with a fresh instance -- rather than trying to reset the
+                    // existing one's `state` back to `.resolving` in place -- guarantees the next
+                    // sign-in starts from a clean slate with no leftover `justCreatedJoinCode` or
+                    // household id from the previous account still cached in memory (the persisted
+                    // `UserDefaults` id is still re-verified against the new uid by `start()`
+                    // itself, per its existing `isMember` check). Harmless on first launch too,
+                    // since `HouseholdSession.init` has no side effects.
+                    householdSession = HouseholdSession()
+                }
             }
         }
     }
