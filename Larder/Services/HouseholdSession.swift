@@ -2,11 +2,23 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 
-/// Resolves this device's identity (Firebase Anonymous Auth) and which household it belongs to,
-/// per ADR-0003's corrected multi-device design: a household has its own random document ID with
-/// a `memberUids` array, not the auth UID itself. Plain Anonymous Auth mints a different,
-/// unrelated UID on every device with no built-in way to share one identity across devices, so a
-/// device either creates a new household or joins an existing one via a short human-typed code.
+enum HouseholdSessionError: LocalizedError {
+    case notSignedIn
+
+    var errorDescription: String? {
+        switch self {
+        case .notSignedIn:
+            return "Something went wrong — you're not signed in. Try restarting the app."
+        }
+    }
+}
+
+/// Resolves which household this device's already-signed-in identity belongs to, per ADR-0003's
+/// multi-device design: a household has its own random document ID with a `memberUids` array, not
+/// the auth UID itself, so a device either creates a new household or joins an existing one via a
+/// short human-typed code. As of Phase 1, real sign-in (`AuthSession`) is a mandatory gate before
+/// this class ever runs — it no longer signs in anonymously itself; every method here assumes
+/// `Auth.auth().currentUser` is already a real, non-anonymous user.
 @MainActor
 @Observable
 final class HouseholdSession {
@@ -33,14 +45,15 @@ final class HouseholdSession {
         return nil
     }
 
-    /// Signs in anonymously if needed, then resolves this device's household from a locally
-    /// remembered ID (re-verified against the server) or surfaces the create/join screen.
+    /// Resolves this device's household from a locally remembered ID (re-verified against the
+    /// server) or surfaces the create/join screen. Assumes `AuthSession` has already established
+    /// a real, signed-in identity before this runs.
     func start() async {
         state = .resolving
         do {
-            let uid = try await signInIfNeeded()
+            let uid = try currentUid()
             if let savedId = UserDefaults.standard.string(forKey: householdIdDefaultsKey) {
-                if try await isMember(uid: uid, householdId: savedId) {
+                if await isMember(uid: uid, householdId: savedId) {
                     state = .ready(householdId: savedId)
                     return
                 }
@@ -60,7 +73,7 @@ final class HouseholdSession {
     /// written in one batch so a join can never observe one without the other.
     func createHousehold() async {
         do {
-            let uid = try await signInIfNeeded()
+            let uid = try currentUid()
             let code = Self.generateJoinCode()
             let householdRef = firestore.collection("households").document()
             let batch = firestore.batch()
@@ -101,7 +114,7 @@ final class HouseholdSession {
             return
         }
         do {
-            let uid = try await signInIfNeeded()
+            let uid = try currentUid()
             let codeSnapshot = try await firestore.collection("joinCodes").document(normalizedCode).getDocument()
             guard let householdId = codeSnapshot.data()?["householdId"] as? String else {
                 state = .error("That code doesn't match a household. Double-check it and try again.")
@@ -127,19 +140,29 @@ final class HouseholdSession {
         }
     }
 
-    private func isMember(uid: String, householdId: String) async throws -> Bool {
-        let snapshot = try await firestore.collection("households").document(householdId).getDocument()
-        guard let memberUids = snapshot.data()?["memberUids"] as? [String] else { return false }
+    /// Returns whether `uid` is a member of `householdId` — `false` both when the household
+    /// genuinely doesn't list this uid, and when the read itself is rejected (e.g. a saved id left
+    /// over from a different account that was signed in on this device before, pointing at a
+    /// household this uid was never added to). Both cases mean the same thing to `start()`: this
+    /// saved id can't be trusted, so it should fall through to setup — not throw and surface a raw
+    /// Firestore permission error for what is, from the user's perspective, an unremarkable "this
+    /// account doesn't have a household yet" case.
+    private func isMember(uid: String, householdId: String) async -> Bool {
+        guard let snapshot = try? await firestore.collection("households").document(householdId).getDocument(),
+              let memberUids = snapshot.data()?["memberUids"] as? [String] else {
+            return false
+        }
         return memberUids.contains(uid)
     }
 
-    @discardableResult
-    private func signInIfNeeded() async throws -> String {
-        if let user = Auth.auth().currentUser {
-            return user.uid
+    /// Reads the uid of the already-signed-in user established by `AuthSession` before this class
+    /// ever runs. Throwing (rather than falling back to an anonymous sign-in, as this used to)
+    /// means a genuine ordering bug fails loudly instead of silently minting a throwaway identity.
+    private func currentUid() throws -> String {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw HouseholdSessionError.notSignedIn
         }
-        let result = try await Auth.auth().signInAnonymously()
-        return result.user.uid
+        return uid
     }
 
     /// Excludes visually ambiguous characters (0/O, 1/I/L) since this code is meant to be read off

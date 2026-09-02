@@ -31,17 +31,19 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.memberUids == [request.auth.uid];
 
-      // Joining: the only update a non-member may ever make to a household document is appending
-      // their own uid to memberUids -- nothing else may change in that same write. An existing
-      // member may make any other update.
+      // The only update ANY caller -- member or not -- may make to a household document today is
+      // appending their own uid to memberUids via the join-code flow; no other field is writable
+      // by anyone yet. This used to also grant any *existing* member an unconditional write to
+      // the whole document (any field, including removing OTHER members or rewriting joinCode) --
+      // tightened after an architecture review flagged that branch as exploitable via a direct
+      // Firestore call, and unnecessary besides: no app flow relies on it, since nothing today
+      // updates a household document except the join-append. Re-open specific fields here
+      // deliberately (e.g. joinCode rotation) only once an actual feature needs it -- ideally
+      // gated by an Admin check (see the Roles feature in the household-platform roadmap review)
+      // rather than "any member."
       allow update: if request.auth != null
-                    && (
-                      request.auth.uid in resource.data.memberUids
-                      || (
-                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
-                        && request.resource.data.memberUids == resource.data.memberUids.concat([request.auth.uid])
-                      )
-                    );
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+                    && request.resource.data.memberUids == resource.data.memberUids.concat([request.auth.uid]);
 
       allow delete: if false;
 
