@@ -64,7 +64,18 @@ service cloud.firestore {
       }
 
       match /transactions/{transactionId} {
-        allow read, write: if isMember();
+        allow read: if isMember();
+
+        // `performedByUid` must match the caller's own uid on create -- `CatalogStore.
+        // addTransaction` stamps it automatically with whoever's signed in, so a normal client
+        // never sends anything else; this just closes the door on a modified/direct client
+        // writing a transaction under another member's name. Not required on update/delete: an
+        // edit corrects the existing record and deliberately keeps its original `performedByUid`
+        // (see that field's doc comment) rather than re-attributing it to the editor, and there's
+        // no per-member restriction on who may edit/delete yet (that's a Roles-era question).
+        allow create: if isMember()
+                      && request.resource.data.performedByUid == request.auth.uid;
+        allow update, delete: if isMember();
       }
 
       match /countSessions/{sessionId} {

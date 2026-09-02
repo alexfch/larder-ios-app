@@ -16,6 +16,14 @@ struct Transaction: Identifiable, Codable, Hashable {
     var occurredAt: Date
     /// Set only on `.adjust` transactions produced by a count session.
     var reasonTag: String?
+    /// The signed-in uid that performed this action -- nil here at construction (this is a plain,
+    /// Firebase-agnostic model, so `StockService`/`BackupService` never touch Firebase Auth
+    /// directly) and stamped in by `CatalogStore.addTransaction`, the one real write path, right
+    /// before it hits Firestore. An edit (`CatalogStore.updateTransaction`) never re-stamps this:
+    /// it's attribution for the original action, not whoever last corrected the record. Nil for
+    /// any transaction written before this field existed, or wherever no signed-in actor was
+    /// available to attribute.
+    var performedByUid: String?
 
     init(
         id: String = UUID().uuidString,
@@ -24,7 +32,8 @@ struct Transaction: Identifiable, Codable, Hashable {
         qty: Double,
         exp: Date,
         occurredAt: Date = .now,
-        reasonTag: String? = nil
+        reasonTag: String? = nil,
+        performedByUid: String? = nil
     ) {
         self.id = id
         self.itemId = itemId
@@ -33,5 +42,6 @@ struct Transaction: Identifiable, Codable, Hashable {
         self.exp = exp
         self.occurredAt = occurredAt
         self.reasonTag = reasonTag
+        self.performedByUid = performedByUid
     }
 }

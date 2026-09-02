@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 /// The read/write surface `StockService`, `CountSessionService`, and `BackupService` need,
@@ -132,8 +133,17 @@ final class CatalogStore: CatalogWriting {
         transactions.filter { $0.itemId == itemId }
     }
 
+    /// Stamps `performedByUid` with the currently signed-in uid before writing -- the one place
+    /// that happens, so `StockService`/`BackupService` can build `Transaction` values without
+    /// knowing anything about Firebase Auth (see `Transaction.performedByUid`'s doc comment).
+    /// Doesn't overwrite an already-set value, so a caller that has a real reason to set it
+    /// explicitly (none does today) isn't silently clobbered.
     func addTransaction(_ transaction: Transaction) throws {
-        try householdRef.collection("transactions").document(transaction.id).setData(from: transaction)
+        var stamped = transaction
+        if stamped.performedByUid == nil {
+            stamped.performedByUid = Auth.auth().currentUser?.uid
+        }
+        try householdRef.collection("transactions").document(stamped.id).setData(from: stamped)
     }
 
     func updateTransaction(_ transaction: Transaction) throws {
