@@ -50,7 +50,7 @@ final class HouseholdSession {
     /// to one or more households from elsewhere, without forcing a fresh join-code round trip.
     private(set) var accessibleHouseholds: [AccessibleHousehold] = []
 
-    private let householdIdDefaultsKey = "com.bolzhelarskyi.larder.householdId"
+    private static let householdIdDefaultsKey = "com.bolzhelarskyi.larder.householdId"
     private let firestore = FirestoreDatabase.instance()
 
     var householdId: String? {
@@ -65,7 +65,7 @@ final class HouseholdSession {
         state = .resolving
         do {
             let uid = try currentUid()
-            if let savedId = UserDefaults.standard.string(forKey: householdIdDefaultsKey) {
+            if let savedId = UserDefaults.standard.string(forKey: Self.householdIdDefaultsKey) {
                 if await isMember(uid: uid, householdId: savedId) {
                     state = .ready(householdId: savedId)
                     return
@@ -73,7 +73,7 @@ final class HouseholdSession {
                 // The saved ID is no longer valid (e.g. reinstalled, or removed from the
                 // household elsewhere) -- forget it and fall through to setup instead of leaving
                 // the app stuck pointing at a household this device can't read.
-                UserDefaults.standard.removeObject(forKey: householdIdDefaultsKey)
+                UserDefaults.standard.removeObject(forKey: Self.householdIdDefaultsKey)
             }
             state = .needsSetup
         } catch {
@@ -101,7 +101,7 @@ final class HouseholdSession {
             ], forDocument: firestore.collection("joinCodes").document(code))
             try await batch.commit()
 
-            UserDefaults.standard.set(householdRef.documentID, forKey: householdIdDefaultsKey)
+            UserDefaults.standard.set(householdRef.documentID, forKey: Self.householdIdDefaultsKey)
             justCreatedJoinCode = code
             state = .ready(householdId: householdRef.documentID)
         } catch {
@@ -113,6 +113,19 @@ final class HouseholdSession {
     /// presumably, noted down) the join code for pairing a second device later.
     func acknowledgeHouseholdCreated() {
         justCreatedJoinCode = nil
+    }
+
+    /// Forgets this device's remembered household id -- call when the signed-in identity changes
+    /// (`LarderApp` does this on logout). `householdIdDefaultsKey` is a single, account-agnostic
+    /// key: if it's left set after signing out, the *next* account to sign in on this device
+    /// inherits the *previous* account's household id in `start()`, which then fails Security
+    /// Rules' membership check (this uid was never added to that household). `isMember` already
+    /// treats that failure as "not a member" rather than crashing -- but reaching that point at
+    /// all was observed to be slow enough, on a cold Firestore connection right after sign-up, to
+    /// look like a hang. Clearing the key on identity change removes the bad state at its source
+    /// instead of only handling its symptom.
+    static func forgetCachedHousehold() {
+        UserDefaults.standard.removeObject(forKey: Self.householdIdDefaultsKey)
     }
 
     /// Fetches every household the signed-in identity is already a member of, for the "or
@@ -138,7 +151,7 @@ final class HouseholdSession {
     /// join-code round trip -- membership is already guaranteed by the query that produced it
     /// (and re-enforced server-side by Security Rules regardless), so no re-verification here.
     func selectHousehold(_ householdId: String) {
-        UserDefaults.standard.set(householdId, forKey: householdIdDefaultsKey)
+        UserDefaults.standard.set(householdId, forKey: Self.householdIdDefaultsKey)
         state = .ready(householdId: householdId)
     }
 
@@ -173,7 +186,7 @@ final class HouseholdSession {
             _ = try await firestore.collection("households").document(householdId)
                 .collection("transactions").getDocuments(source: .server)
 
-            UserDefaults.standard.set(householdId, forKey: householdIdDefaultsKey)
+            UserDefaults.standard.set(householdId, forKey: Self.householdIdDefaultsKey)
             state = .ready(householdId: householdId)
         } catch {
             state = .error(error.localizedDescription)

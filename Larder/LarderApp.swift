@@ -88,19 +88,35 @@ struct LarderApp: App {
             // below now constructs it directly in its own `init`, which SwiftUI guarantees runs
             // exactly once for a given household id, with no async race to lose.
             .task(id: authSession.uid) {
-                if authSession.uid != nil {
-                    await householdSession.start()
-                } else {
-                    // Signed out (via `SettingsView`'s Log Out, or never signed in yet). Replacing
-                    // `householdSession` with a fresh instance -- rather than trying to reset the
-                    // existing one's `state` back to `.resolving` in place -- guarantees the next
-                    // sign-in starts from a clean slate with no leftover `justCreatedJoinCode` or
-                    // household id from the previous account still cached in memory (the persisted
-                    // `UserDefaults` id is still re-verified against the new uid by `start()`
-                    // itself, per its existing `isMember` check). Harmless on first launch too,
-                    // since `HouseholdSession.init` has no side effects.
-                    householdSession = HouseholdSession()
-                }
+                guard authSession.uid != nil else { return }
+                await householdSession.start()
+            }
+            // Separate from the `.task(id:)` above deliberately: `.onChange` only fires on an
+            // actual transition of `authSession.uid`, never for the value a view already holds
+            // when it first appears -- unlike `.task(id:)`, which always runs once immediately for
+            // whatever the id's *initial* value is. That distinction matters here because the
+            // initial value on every app launch is nil (before `authSession.start()` has resolved
+            // whether `Auth.auth().currentUser` is already signed in): a `.task(id:)`-based version
+            // of this reset fired on that same initial nil and would wipe a *returning* signed-in
+            // user's perfectly valid cached household id before their session ever got a chance to
+            // use it. Gating on `oldValue != nil` restricts this to a genuine sign-out (real uid ->
+            // nil), which `.onChange` alone can express.
+            .onChange(of: authSession.uid) { oldValue, newValue in
+                guard oldValue != nil, newValue == nil else { return }
+                // Signed out (via `SettingsView`'s Log Out). Replacing `householdSession` with a
+                // fresh instance -- rather than resetting the existing one's `state` in place --
+                // guarantees the next sign-in starts from a clean slate with no leftover
+                // `justCreatedJoinCode` still held in memory.
+                //
+                // `forgetCachedHousehold()` clears the *persisted* household id too, rather than
+                // leaving it for `start()`'s `isMember` check to re-verify against whichever uid
+                // signs in next: that re-verification is a Security Rules read that fails for a
+                // different account (this uid was never added to the previous account's
+                // household), and was observed to be slow enough on a cold Firestore connection to
+                // look like an indefinite hang rather than a quick fallthrough to `.needsSetup`.
+                // Clearing it here means a fresh sign-in never takes that path at all.
+                HouseholdSession.forgetCachedHousehold()
+                householdSession = HouseholdSession()
             }
         }
     }
