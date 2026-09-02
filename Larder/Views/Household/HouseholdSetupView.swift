@@ -52,6 +52,10 @@ struct HouseholdSetupView: View {
                     }
                     .padding(.horizontal, 20)
 
+                    if !session.accessibleHouseholds.isEmpty {
+                        accessibleHouseholdsList
+                    }
+
                 case .join:
                     Text("Enter the code shown on the device that's already set up.")
                         .font(.system(size: 15))
@@ -102,6 +106,56 @@ struct HouseholdSetupView: View {
         .onChange(of: session.state) { _, _ in
             isWorking = false
         }
+        .task {
+            await session.loadAccessibleHouseholds()
+        }
+    }
+
+    /// "Or continue in a household you already belong to" -- shown below Create/Join when this
+    /// signed-in identity already has access to at least one household (e.g. a second device
+    /// being set up for an existing account), so it doesn't have to go through the join-code flow
+    /// just to reach a household it's already a member of.
+    private var accessibleHouseholdsList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Or continue in a household you already belong to")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.larderSecondaryText)
+                .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(session.accessibleHouseholds) { household in
+                    Button {
+                        select(household)
+                    } label: {
+                        HStack {
+                            Text("Household \(household.joinCode)")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.larderInk)
+                            Spacer()
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
+
+                    if household.id != session.accessibleHouseholds.last?.id {
+                        Divider().overlay(Color.larderDivider)
+                    }
+                }
+            }
+            .background(Color.white)
+            .overlay(Rectangle().strokeBorder(Color.larderDivider, lineWidth: 1))
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
+    }
+
+    private func select(_ household: AccessibleHousehold) {
+        validationMessage = nil
+        isWorking = true
+        session.selectHousehold(household.id)
     }
 
     private func create() {

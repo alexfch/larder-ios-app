@@ -24,9 +24,16 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
-      allow get: if request.auth != null
-                 && request.auth.uid in resource.data.memberUids;
-      allow list: if false;
+      // `list` (not just `get`) is granted under the same condition so a signed-in device can
+      // query "households where I'm a member" (`memberUids array-contains uid`) -- e.g. to offer
+      // a returning user a shortcut past the join-code flow on `HouseholdSetupView`. This stays
+      // safe under Firestore's list-query rule evaluation: every document a matching query could
+      // return already satisfies `request.auth.uid in resource.data.memberUids` by construction
+      // (the query itself is filtered on that exact field), so no document outside the caller's
+      // own households can ever be returned -- there's still no way to enumerate the collection
+      // at large.
+      allow get, list: if request.auth != null
+                        && request.auth.uid in resource.data.memberUids;
 
       allow create: if request.auth != null
                     && request.resource.data.memberUids == [request.auth.uid];

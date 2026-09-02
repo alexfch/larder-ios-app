@@ -2,6 +2,13 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 
+/// One household the signed-in identity already belongs to -- just enough to render a row on
+/// `HouseholdSetupView`'s "or continue in a household you already belong to" list.
+struct AccessibleHousehold: Identifiable, Equatable {
+    let id: String
+    let joinCode: String
+}
+
 enum HouseholdSessionError: LocalizedError {
     case notSignedIn
 
@@ -36,6 +43,12 @@ final class HouseholdSession {
     /// code is otherwise surfaced anywhere, since there's no household/settings screen yet to
     /// revisit it later.
     private(set) var justCreatedJoinCode: String?
+
+    /// Households the signed-in identity already belongs to, for `HouseholdSetupView` to offer as
+    /// a shortcut below Create/Join -- populated by `loadAccessibleHouseholds()`, which that view
+    /// calls when it appears. Covers a device being set up for an account that already has access
+    /// to one or more households from elsewhere, without forcing a fresh join-code round trip.
+    private(set) var accessibleHouseholds: [AccessibleHousehold] = []
 
     private let householdIdDefaultsKey = "com.bolzhelarskyi.larder.householdId"
     private let firestore = FirestoreDatabase.instance()
@@ -100,6 +113,33 @@ final class HouseholdSession {
     /// presumably, noted down) the join code for pairing a second device later.
     func acknowledgeHouseholdCreated() {
         justCreatedJoinCode = nil
+    }
+
+    /// Fetches every household the signed-in identity is already a member of, for the "or
+    /// continue in a household you already belong to" list on `HouseholdSetupView`. Best-effort:
+    /// a failed query just leaves the list empty (or stale) rather than surfacing an error --
+    /// Create/Join both remain available regardless, so this is a convenience, not a gate.
+    func loadAccessibleHouseholds() async {
+        guard let uid = try? currentUid() else { return }
+        do {
+            let snapshot = try await firestore.collection("households")
+                .whereField("memberUids", arrayContains: uid)
+                .getDocuments()
+            accessibleHouseholds = snapshot.documents.compactMap { document in
+                guard let joinCode = document.data()["joinCode"] as? String else { return nil }
+                return AccessibleHousehold(id: document.documentID, joinCode: joinCode)
+            }
+        } catch {
+            accessibleHouseholds = []
+        }
+    }
+
+    /// Switches this device directly to a household from `accessibleHouseholds`, skipping the
+    /// join-code round trip -- membership is already guaranteed by the query that produced it
+    /// (and re-enforced server-side by Security Rules regardless), so no re-verification here.
+    func selectHousehold(_ householdId: String) {
+        UserDefaults.standard.set(householdId, forKey: householdIdDefaultsKey)
+        state = .ready(householdId: householdId)
     }
 
     /// Joins an existing household by its short code. The `joinCodes` collection only ever maps a
