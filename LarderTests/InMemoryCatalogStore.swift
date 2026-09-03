@@ -11,6 +11,7 @@ final class InMemoryCatalogStore: CatalogWriting {
     private(set) var items: [Item] = []
     private(set) var transactions: [Transaction] = []
     private(set) var countSessions: [CountSession] = []
+    private(set) var roster: [RosterMember] = []
     private var linesBySession: [String: [CountLine]] = [:]
 
     func item(id: String) -> Item? {
@@ -62,5 +63,18 @@ final class InMemoryCatalogStore: CatalogWriting {
     func updateCountLine(_ line: CountLine, sessionId: String) throws {
         guard let index = linesBySession[sessionId]?.firstIndex(where: { $0.id == line.id }) else { return }
         linesBySession[sessionId]?[index] = line
+    }
+
+    func addRosterMember(_ member: RosterMember) throws {
+        roster.append(member)
+    }
+
+    func updateRosterMember(_ member: RosterMember) throws {
+        guard let index = roster.firstIndex(where: { $0.id == member.id }) else { return }
+        roster[index] = member
+    }
+
+    func deleteRosterMember(id: String) {
+        roster.removeAll { $0.id == id }
     }
 }

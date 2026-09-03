@@ -64,6 +64,7 @@ struct LarderApp: App {
             }
             .environment(toastCenter)
             .environment(authSession)
+            .environment(householdSession)
             .overlay(ToastOverlay(message: toastCenter.message))
             // The design system (Color.larderBackground etc.) is light-only for now;
             // lock appearance so Form-based screens don't flip to a native dark look

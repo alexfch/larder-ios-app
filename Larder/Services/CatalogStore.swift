@@ -25,6 +25,11 @@ protocol CatalogWriting: AnyObject {
     func lines(for sessionId: String) -> [CountLine]
     func addCountLine(_ line: CountLine, sessionId: String) throws
     func updateCountLine(_ line: CountLine, sessionId: String) throws
+
+    var roster: [RosterMember] { get }
+    func addRosterMember(_ member: RosterMember) throws
+    func updateRosterMember(_ member: RosterMember) throws
+    func deleteRosterMember(id: String)
 }
 
 /// Firestore-backed replacement for SwiftData's `@Query`/`ModelContext`: attaches snapshot
@@ -46,6 +51,7 @@ final class CatalogStore: CatalogWriting {
     private(set) var items: [Item] = []
     private(set) var transactions: [Transaction] = []
     private(set) var countSessions: [CountSession] = []
+    private(set) var roster: [RosterMember] = []
     /// This household's short pairing code (see `HouseholdSession`/ADR-0003), for screens that
     /// want to display it (e.g. as a reminder of which household you're in, or to read off to
     /// pair a second device) without needing to hold onto it separately.
@@ -104,6 +110,15 @@ final class CatalogStore: CatalogWriting {
                 return
             }
             self.joinCode = snapshot?.data()?["joinCode"] as? String
+        })
+
+        listeners.append(householdRef.collection("roster").addSnapshotListener { [weak self] snapshot, error in
+            guard let self else { return }
+            if let error {
+                assertionFailure("roster listener failed: \(error)")
+                return
+            }
+            self.roster = snapshot?.documents.compactMap { try? $0.data(as: RosterMember.self) } ?? []
         })
     }
 
@@ -192,5 +207,31 @@ final class CatalogStore: CatalogWriting {
 
     func updateCountLine(_ line: CountLine, sessionId: String) throws {
         try householdRef.collection("countSessions").document(sessionId).collection("lines").document(line.id).setData(from: line)
+    }
+
+    // MARK: Roster (ADR-0004)
+
+    func addRosterMember(_ member: RosterMember) throws {
+        try householdRef.collection("roster").document(member.id).setData(from: member)
+    }
+
+    func updateRosterMember(_ member: RosterMember) throws {
+        try householdRef.collection("roster").document(member.id).setData(from: member)
+    }
+
+    func deleteRosterMember(id: String) {
+        householdRef.collection("roster").document(id).delete()
+    }
+
+    /// Admin-only removal of another household member (ADR-0004): removes their uid from
+    /// `memberUids` and deletes their roster entry, atomically -- see `firestore.rules`' household
+    /// `update` rule for the matching Admin-removal branch. Doesn't check the "don't remove the
+    /// household's last Admin" invariant -- that's a client-side-only guard in `SettingsView`, for
+    /// the same reason `HouseholdSession.leaveHousehold()`'s doc comment gives.
+    func removeMember(uid: String) {
+        let batch = firestore.batch()
+        batch.updateData(["memberUids": FieldValue.arrayRemove([uid])], forDocument: householdRef)
+        batch.deleteDocument(householdRef.collection("roster").document(uid))
+        batch.commit()
     }
 }

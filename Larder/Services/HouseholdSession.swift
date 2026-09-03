@@ -87,8 +87,12 @@ final class HouseholdSession {
     }
 
     /// Creates a new household with this device as its sole member, plus a short join code other
-    /// devices can type in later. The household document and its join-code lookup entry are
-    /// written in one batch so a join can never observe one without the other.
+    /// devices can type in later. The household document, its join-code lookup entry, and the
+    /// creator's Admin roster entry (ADR-0004's "a household always has ≥1 Admin" invariant) are
+    /// all written in one batch, so none of the three can ever be observed without the other two
+    /// -- and so `firestore.rules`' roster `create` rule can recognize this exact moment via
+    /// `getAfter()` on the household doc (its `memberUids`, as this same batch will leave it,
+    /// is exactly `[uid]`) without needing a separate, harder-to-secure bootstrap path.
     func createHousehold() async {
         do {
             let uid = try currentUid()
@@ -104,6 +108,7 @@ final class HouseholdSession {
                 "householdId": householdRef.documentID,
                 "createdAt": FieldValue.serverTimestamp()
             ], forDocument: firestore.collection("joinCodes").document(code))
+            try batch.setData(from: RosterMember(id: uid, linkedUids: [uid], role: .admin), forDocument: householdRef.collection("roster").document(uid))
             try await batch.commit()
 
             UserDefaults.standard.set(householdRef.documentID, forKey: Self.householdIdDefaultsKey)
@@ -118,6 +123,33 @@ final class HouseholdSession {
     /// presumably, noted down) the join code for pairing a second device later.
     func acknowledgeHouseholdCreated() {
         justCreatedJoinCode = nil
+    }
+
+    /// Leaves the current household (ADR-0004: self-only, always allowed regardless of role) --
+    /// removes this device's uid from `memberUids` and deletes its own roster entry, atomically,
+    /// then forgets the cached household id and returns this device to `.needsSetup`.
+    ///
+    /// Doesn't check the "don't leave as the household's sole Admin" invariant here -- Security
+    /// Rules can't express it (there's no way to count roster entries matching a condition from
+    /// rules, only read specific known documents), and it's not an adversarial concern between
+    /// different people the way self-escalation to Admin is: the only person a sole Admin
+    /// orphaning their own household hurts is themselves. `SettingsView` guards this client-side
+    /// instead, before ever calling this method.
+    func leaveHousehold() async {
+        guard let householdId else { return }
+        do {
+            let uid = try currentUid()
+            let householdRef = firestore.collection("households").document(householdId)
+            let batch = firestore.batch()
+            batch.updateData(["memberUids": FieldValue.arrayRemove([uid])], forDocument: householdRef)
+            batch.deleteDocument(householdRef.collection("roster").document(uid))
+            try await batch.commit()
+
+            Self.forgetCachedHousehold()
+            state = .needsSetup
+        } catch {
+            state = .error(error.localizedDescription)
+        }
     }
 
     /// Forgets this device's remembered household id -- call when the signed-in identity changes
@@ -164,7 +196,8 @@ final class HouseholdSession {
     /// code to a household ID (see `firestore.rules`) -- it's readable by any signed-in device
     /// specifically so a device can resolve a code before it's a member of anything, without that
     /// read exposing the household's actual data. Membership itself is granted by a narrowly-scoped
-    /// update that Security Rules only allow to append the caller's own uid to `memberUids`.
+    /// update that Security Rules only allow to append the caller's own uid to `memberUids`,
+    /// batched with the caller's own Member roster entry (ADR-0004).
     func joinHousehold(code: String) async {
         let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !normalizedCode.isEmpty else {
@@ -178,18 +211,23 @@ final class HouseholdSession {
                 state = .error("That code doesn't match a household. Double-check it and try again.")
                 return
             }
-            try await firestore.collection("households").document(householdId).updateData([
-                "memberUids": FieldValue.arrayUnion([uid])
-            ])
+            // Batched with the roster entry for the same reason `createHousehold` batches its
+            // three writes: `firestore.rules`' roster `create` rule checks `getAfter()` on this
+            // household doc to confirm the caller is (about to be) a member, and self-assigns
+            // only `role: .member`, never `.admin` -- self-escalation is impossible through this
+            // path by construction.
+            let householdRef = firestore.collection("households").document(householdId)
+            let batch = firestore.batch()
+            batch.updateData(["memberUids": FieldValue.arrayUnion([uid])], forDocument: householdRef)
+            try batch.setData(from: RosterMember(id: uid, linkedUids: [uid], role: .member), forDocument: householdRef.collection("roster").document(uid))
+            try await batch.commit()
             // Force a server round-trip for this household's data now (rather than relying on the
             // listeners the rest of the app attaches after setup) so the local cache is already
             // populated before this device is treated as ready -- see ADR-0003's first-login/
             // offline note: a brand-new device needs one successful connection before its
             // client-derived on-hand totals have anything to compute from.
-            _ = try await firestore.collection("households").document(householdId)
-                .collection("items").getDocuments(source: .server)
-            _ = try await firestore.collection("households").document(householdId)
-                .collection("transactions").getDocuments(source: .server)
+            _ = try await householdRef.collection("items").getDocuments(source: .server)
+            _ = try await householdRef.collection("transactions").getDocuments(source: .server)
 
             UserDefaults.standard.set(householdId, forKey: Self.householdIdDefaultsKey)
             state = .ready(householdId: householdId)

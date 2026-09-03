@@ -24,6 +24,20 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.memberUids;
+      }
+
+      // ADR-0004: an Admin is a roster entry, keyed by the caller's own uid, with role == 'admin'
+      // -- `exists()` guards the `get()` so a caller with no roster entry at all (or a no-login
+      // entry, which is never keyed by a real uid) simply isn't an Admin rather than erroring.
+      function isAdmin() {
+        return request.auth != null
+          && exists(/databases/$(database)/documents/households/$(householdId)/roster/$(request.auth.uid))
+          && get(/databases/$(database)/documents/households/$(householdId)/roster/$(request.auth.uid)).data.role == 'admin';
+      }
+
       // `list` (not just `get`) is granted under the same condition so a signed-in device can
       // query "households where I'm a member" (`memberUids array-contains uid`) -- e.g. to offer
       // a returning user a shortcut past the join-code flow on `HouseholdSetupView`. This stays
@@ -38,26 +52,34 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.memberUids == [request.auth.uid];
 
-      // The only update ANY caller -- member or not -- may make to a household document today is
-      // appending their own uid to memberUids via the join-code flow; no other field is writable
+      // Every caller-writable path here touches `memberUids` only -- no other field is writable
       // by anyone yet. This used to also grant any *existing* member an unconditional write to
       // the whole document (any field, including removing OTHER members or rewriting joinCode) --
       // tightened after an architecture review flagged that branch as exploitable via a direct
-      // Firestore call, and unnecessary besides: no app flow relies on it, since nothing today
-      // updates a household document except the join-append. Re-open specific fields here
-      // deliberately (e.g. joinCode rotation) only once an actual feature needs it -- ideally
-      // gated by an Admin check (see the Roles feature in the household-platform roadmap review)
-      // rather than "any member."
+      // Firestore call. Re-open specific fields here deliberately (e.g. joinCode rotation) only
+      // once an actual feature needs it -- ideally Admin-gated.
       allow update: if request.auth != null
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
-                    && request.resource.data.memberUids == resource.data.memberUids.concat([request.auth.uid]);
+                    && (
+                         // Join: append exactly the caller's own uid.
+                         request.resource.data.memberUids == resource.data.memberUids.concat([request.auth.uid])
+                         // Leave (ADR-0004: self-only, always allowed regardless of role):
+                         // remove exactly the caller's own uid. Batched client-side with deleting
+                         // the caller's own roster entry -- see `HouseholdSession.leaveHousehold()`.
+                         || request.resource.data.memberUids == resource.data.memberUids.removeAll([request.auth.uid])
+                         // Admin removes someone else: the new list is the old one minus exactly
+                         // one uid (size down by 1, and every remaining uid was already present).
+                         // Batched client-side with deleting that person's roster entry -- see
+                         // `CatalogStore.removeMember(uid:)`.
+                         || (isAdmin()
+                             && request.resource.data.memberUids.size() == resource.data.memberUids.size() - 1
+                             && resource.data.memberUids.hasAll(request.resource.data.memberUids))
+                       );
 
-      allow delete: if false;
-
-      function isMember() {
-        return request.auth != null
-          && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.memberUids;
-      }
+      // ADR-0004: household deletion is Admin-only. No UI calls this yet -- included now so the
+      // rule already reflects the invariant once a "delete household" feature exists, rather than
+      // needing a second rules deploy for a one-line change.
+      allow delete: if isAdmin();
 
       match /items/{itemId} {
         allow read, write: if isMember();
@@ -84,6 +106,61 @@ service cloud.firestore {
         match /lines/{lineId} {
           allow read, write: if isMember();
         }
+      }
+
+      // ADR-0004: the household's roster of people, distinct from `memberUids` (access control
+      // only, untouched by any of this). `memberId` is the creating/joining uid for a
+      // self-registered member, or a generated id for a no-login family member -- see
+      // `RosterMember`'s doc comment.
+      match /roster/{memberId} {
+        allow read: if isMember();
+
+        // Three ways a roster entry can be created, all requiring the caller to already be (or,
+        // in the same batch, about to become) a household member -- see `HouseholdSession` for
+        // the two bootstrap paths this pairs with:
+        // 1. No-login family member: any member can add one by hand (ADR-0004 lists this as an
+        //    "Admin or Member, undifferentiated" action) -- it never has a login or a role, so
+        //    there's nothing here to escalate.
+        // 2. Bootstrap Admin, batched with `createHousehold()`: the household's `memberUids`, as
+        //    this same batch will leave it (`getAfter`), is exactly `[caller]` -- true only at
+        //    the single moment a brand-new household has no other members yet.
+        // 3. Ordinary join, batched with `joinHousehold(code:)`'s `memberUids` append: caller
+        //    must already appear in `memberUids` as this batch will leave it, and can only ever
+        //    self-assign `role: 'member'` -- self-escalation to Admin is impossible through this
+        //    branch by construction.
+        // Branches 2 and 3 require `memberId == request.auth.uid`, matching how
+        // `HouseholdSession` keys these two bootstrap entries.
+        allow create: if request.auth != null
+                      && (
+                           (request.resource.data.linkedUids == []
+                            && request.resource.data.role == null
+                            && request.auth.uid in getAfter(/databases/$(database)/documents/households/$(householdId)).data.memberUids)
+                           || (memberId == request.auth.uid
+                               && request.resource.data.linkedUids == [request.auth.uid]
+                               && (
+                                    (request.resource.data.role == 'admin'
+                                     && getAfter(/databases/$(database)/documents/households/$(householdId)).data.memberUids == [request.auth.uid])
+                                    || (request.resource.data.role == 'member'
+                                        && request.auth.uid in getAfter(/databases/$(database)/documents/households/$(householdId)).data.memberUids)
+                                  )
+                              )
+                         );
+
+        // Only an Admin may change `role`/`linkedUids` or edit anyone else's entry; the entry's
+        // own linked user may update their own non-identity fields (displayName, ageBand).
+        // Leaving (removing your own entry) is the `delete` rule below, not an update.
+        allow update: if isMember()
+                      && (
+                           isAdmin()
+                           || (memberId == request.auth.uid
+                               && request.resource.data.role == resource.data.role
+                               && request.resource.data.linkedUids == resource.data.linkedUids)
+                         );
+
+        // Admin can remove anyone (including a no-login entry, which has no "self" to invoke the
+        // other branch); the entry's own linked user can always remove themselves, regardless of
+        // role -- leaving a household is never Admin-gated (ADR-0004).
+        allow delete: if isAdmin() || memberId == request.auth.uid;
       }
     }
   }
