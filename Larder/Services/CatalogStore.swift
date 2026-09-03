@@ -52,7 +52,9 @@ final class CatalogStore: CatalogWriting {
     private(set) var joinCode: String?
     private var countLinesBySession: [String: [CountLine]] = [:]
 
-    private let firestore = FirestoreDatabase.instance()
+    // Plain `Firestore.firestore()` -- the `(default)` database. See `HouseholdSession`'s copy of
+    // this comment for why (Cloud Storage Security Rules can only ever read `(default)`).
+    private let firestore = Firestore.firestore()
     // `nonisolated(unsafe)`: `deinit` is never actor-isolated even on a `@MainActor` class (Swift
     // can't guarantee which context deallocation happens on), so cleaning these up there needs to
     // read them outside MainActor isolation. Safe here because both arrays are otherwise only

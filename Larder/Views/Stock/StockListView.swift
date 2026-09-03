@@ -213,9 +213,7 @@ struct StockRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // Photos aren't synced to Cloud Storage yet (see NewProductFormView), so this is
-            // always the monogram fallback for now.
-            ItemThumbnail(photoData: nil, monogram: item.monogram)
+            ItemThumbnail(photoData: nil, photoStorageRef: item.photoStorageRef, monogram: item.monogram)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)

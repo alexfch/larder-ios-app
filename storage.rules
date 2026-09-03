@@ -1,0 +1,39 @@
+rules_version = '2';
+
+// Security Rules for Phase 2 (shared product photos, ADR-0003's `Item.photoStorageRef`).
+//
+// Cloud Storage is a separate product from Firestore with its own rules language -- there's no
+// household-membership concept here on its own, so this mirrors `firestore.rules`' `isMember()`
+// check via `firestore.get()`. That function can ONLY ever read the `(default)` Firestore
+// database, never a named one -- a hard platform restriction, not a configuration choice -- which
+// is the reason this project moved off its earlier named database (`db-larder`) onto `(default)`.
+// See `HouseholdSession`'s comment on `Firestore.firestore()` for the full story.
+//
+// Paste this into the Firebase console under Storage > Rules, or deploy it with the Firebase CLI
+// (`firebase deploy --only storage`) once the project is set up for that.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // One object per item, at a fixed path -- `households/{householdId}/items/{itemId}` (no file
+    // extension in the path; content type on the object itself is what tells a client how to
+    // decode it). A fixed path per item means "change photo" is just an overwrite, not an
+    // orphan-accumulating series of uploads, so there's no separate delete flow to build yet.
+    match /households/{householdId}/items/{itemId} {
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in
+             firestore.get(/databases/(default)/documents/households/$(householdId)).data.memberUids;
+      }
+
+      allow read: if isMember();
+
+      // 5 MiB cap as a backstop against abuse, not a normal-path limit -- `ImageDownsampling`
+      // already keeps real uploads from the app far smaller than this; only a direct API call
+      // bypassing the app would approach it. Content type restricted to images so this path can't
+      // become a general-purpose file drop.
+      allow write: if isMember()
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

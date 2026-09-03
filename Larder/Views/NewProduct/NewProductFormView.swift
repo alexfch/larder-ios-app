@@ -25,6 +25,7 @@ struct NewProductFormView: View {
     @State private var nameError = false
     @State private var barcodeError: String?
     @State private var lookupState: LookupState = .idle
+    @State private var isSaving = false
 
     /// Every real iPhone/iPad has a camera, so this only needs to rule out the Simulator (which
     /// has none) — checked at compile time, not via `AVCaptureDevice.default(for:)` at runtime.
@@ -179,6 +180,7 @@ struct NewProductFormView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
+                        .disabled(isSaving)
                 }
             }
         }
@@ -218,6 +220,8 @@ struct NewProductFormView: View {
     }
 
     private func save() {
+        guard !isSaving else { return }
+
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             nameError = true
             return
@@ -247,17 +251,40 @@ struct NewProductFormView: View {
             return
         }
 
-        // `photoData` is deliberately not attached here yet: ADR-0003 moves item photos to Cloud
-        // Storage for Firebase (a separate product from Firestore, not yet integrated), rather
-        // than storing raw bytes on the document. The picker above stays so the flow reads
-        // correctly and is ready to wire up once that integration lands, but nothing captured
-        // here is persisted anywhere yet.
+        isSaving = true
+        Task {
+            await performSave(normalizedBarcode: normalizedBarcode)
+            isSaving = false
+        }
+    }
+
+    /// Uploads the photo (if any) *before* writing anything to Firestore, rather than firing the
+    /// upload off afterward and letting it fail silently in the background: an item whose
+    /// `photoStorageRef` points at an object that never successfully uploaded would show the
+    /// monogram fallback forever with no explanation and no retry path (there's no "change photo"
+    /// flow outside this form yet). Failing the whole save and leaving the form's fields intact —
+    /// exactly how the barcode-conflict and name-validation errors above already behave — means
+    /// the user sees one clear error and can just hit Save again.
+    private func performSave(normalizedBarcode: String?) async {
+        let itemId = UUID().uuidString
+        var photoStorageRef: String?
+        if let photoData {
+            do {
+                photoStorageRef = try await PhotoStorage.upload(photoData, householdId: store.householdId, itemId: itemId)
+            } catch {
+                barcodeError = "Couldn't upload the photo — check your connection and try again."
+                return
+            }
+        }
+
         let item = Item(
+            id: itemId,
             name: name,
             barcode: normalizedBarcode,
             kind: kind,
             unit: kind == .bulk ? bulkUnit : nil,
-            noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil
+            noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil,
+            photoStorageRef: photoStorageRef
         )
         do {
             try store.addItem(item)

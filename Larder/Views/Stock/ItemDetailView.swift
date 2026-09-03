@@ -47,9 +47,7 @@ struct ItemDetailView: View {
                         .foregroundStyle(Color.larderSecondaryText)
                 }
                 Spacer()
-                // Photos aren't synced to Cloud Storage yet (see NewProductFormView), so this is
-                // always the monogram fallback for now.
-                ItemThumbnail(photoData: nil, monogram: item.monogram, size: 72)
+                ItemThumbnail(photoData: nil, photoStorageRef: item.photoStorageRef, monogram: item.monogram, size: 72)
             }
             .padding(20)
 

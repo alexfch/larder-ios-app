@@ -14,7 +14,10 @@ struct Item: Identifiable, Codable, Hashable {
     var unit: String?
     /// Unit-only: free-text noun, e.g. "tin", "jar", "egg"
     var noun: String?
-    /// Cloud Storage for Firebase object path (ADR-0003) — not yet wired up; see `NewProductFormView`.
+    /// Cloud Storage for Firebase object path (ADR-0003, Phase 2) — set by `NewProductFormView`
+    /// at save time, once `PhotoStorage.upload` has confirmed the object exists; nil for an item
+    /// with no photo. See `storage.rules` for the matching access rule and `ItemThumbnail` for
+    /// how this gets fetched and displayed.
     var photoStorageRef: String?
     var createdAt: Date
 

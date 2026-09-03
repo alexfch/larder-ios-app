@@ -10,8 +10,11 @@ import Foundation
 ///   point in time, not pantry data — an applied session's effect already lives on in the
 ///   `Transaction` history it wrote, and an in-progress or discarded session has nothing worth
 ///   restoring independently of the catalog it was counting.
-/// - Photos are excluded: not yet synced to Cloud Storage at all (see `Item.photoStorageRef`),
-///   and would be the most personal part of this data even once they are.
+/// - Photos are excluded, per the PRD's already-resolved FR-5.3 decision: they'd roughly double
+///   the export size for something easy to reattach by hand if truly needed, and are the most
+///   personal part of this data. Only `photoStorageRef` (a Cloud Storage path, not the photo
+///   itself) would need to round-trip through this format anyway, and a restored item without a
+///   photo is a strictly better outcome than one pointing at an object that was never re-uploaded.
 /// - No encryption: this is non-financial, non-credential data (item names, quantities, dates)
 ///   — it doesn't meet the bar this app's actual secrets (there are none yet) would need
 ///   Keychain/CryptoKit for. The real exposure this format doesn't defend against is the

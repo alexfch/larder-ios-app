@@ -31,6 +31,8 @@ targets:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseStorage
     preBuildScripts:
       - name: SwiftLint
         basedOnDependencyAnalysis: false

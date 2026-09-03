@@ -51,7 +51,12 @@ final class HouseholdSession {
     private(set) var accessibleHouseholds: [AccessibleHousehold] = []
 
     private static let householdIdDefaultsKey = "com.bolzhelarskyi.larder.householdId"
-    private let firestore = FirestoreDatabase.instance()
+    // Plain `Firestore.firestore()` -- this project now uses the `(default)` Firestore database
+    // (moved off a named database, `db-larder`, specifically so Cloud Storage Security Rules'
+    // `firestore.get()`/`firestore.exists()` can read household membership directly: those
+    // functions are hardcoded to only ever reach `(default)`, never a named database, with no way
+    // to configure otherwise -- see `storage.rules`).
+    private let firestore = Firestore.firestore()
 
     var householdId: String? {
         if case .ready(let id) = state { return id }
