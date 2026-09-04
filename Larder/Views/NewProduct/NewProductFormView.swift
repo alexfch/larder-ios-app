@@ -26,22 +26,8 @@ struct NewProductFormView: View {
     @State private var barcodeError: String?
     @State private var lookupState: LookupState = .idle
     @State private var isSaving = false
-
-    /// Every real iPhone/iPad has a camera, so this only needs to rule out the Simulator (which
-    /// has none) — checked at compile time, not via `AVCaptureDevice.default(for:)` at runtime.
-    /// That runtime check used to gate this option, but it can behave unreliably depending on the
-    /// camera permission state (e.g. after the user has previously denied access), which hid the
-    /// option on real hardware instead of just showing it and handling denial explicitly once the
-    /// user actually taps it — the same "guide to Settings" pattern used elsewhere for permission
-    /// denial, not a silent disappearance.
-    private var cameraAvailable: Bool {
-        #if targetEnvironment(simulator)
-        false
-        #else
-        true
-        #endif
-    }
-
+    @State private var showPhotosPicker = false
+    
     private enum LookupState {
         case idle, loading, found, notFound
     }
@@ -127,14 +113,14 @@ struct NewProductFormView: View {
 
                 Section("Photo") {
                     Menu {
-                        if cameraAvailable {
-                            Button {
-                                showCamera = true
-                            } label: {
-                                Label("Take Photo", systemImage: "camera")
-                            }
+                        Button {
+                            showCamera = true
+                        } label: {
+                            Label("Take Photo", systemImage: "camera")
                         }
-                        PhotosPicker(selection: $photoItem, matching: .images) {
+                        Button {
+                            showPhotosPicker = true
+                        } label: {
                             Label("Choose from Library", systemImage: "photo.on.rectangle")
                         }
                     } label: {
@@ -149,6 +135,7 @@ struct NewProductFormView: View {
                             Text(photoData == nil ? "Add a photo" : "Change photo")
                         }
                     }
+                    .photosPicker(isPresented: $showPhotosPicker, selection: $photoItem, matching: .images)
                     .onChange(of: photoItem) { _, newItem in
                         Task {
                             guard let data = try? await newItem?.loadTransferable(type: Data.self) else { return }
