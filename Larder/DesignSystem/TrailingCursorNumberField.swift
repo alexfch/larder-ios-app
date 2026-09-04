@@ -10,8 +10,17 @@ import UIKit
 struct TrailingCursorNumberField: UIViewRepresentable {
     @Binding var value: Double
     var placeholder: String = "0"
+    /// Whole-count items (e.g. "3 tins") don't take fractional values, so this switches to a
+    /// plain number pad (no decimal key) and a formatter that never shows/accepts a fraction —
+    /// the same `.unit` vs `.bulk` split `QuantitySheetView`'s +/- stepper already makes via
+    /// `stepSize`.
+    var allowsDecimal: Bool = true
+    /// SwiftUI's `.font()` modifier has no effect on a wrapped `UITextField` (it only reaches
+    /// native SwiftUI text views), so callers that need something other than the system default --
+    /// e.g. matching `LarderFont.quantityValue()` in `QuantitySheetView` -- pass it here instead.
+    var font: UIFont = .systemFont(ofSize: 17)
 
-    private static let formatter: NumberFormatter = {
+    private static let decimalFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 0
@@ -19,23 +28,37 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         return formatter
     }()
 
+    private static let integerFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 0
+        return formatter
+    }()
+
+    private var formatter: NumberFormatter {
+        allowsDecimal ? Self.decimalFormatter : Self.integerFormatter
+    }
+
     func makeUIView(context: Context) -> UITextField {
         let textField = UITextField()
         textField.delegate = context.coordinator
-        textField.keyboardType = .decimalPad
+        textField.keyboardType = allowsDecimal ? .decimalPad : .numberPad
         textField.textAlignment = .right
         textField.placeholder = placeholder
+        textField.font = font
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged), for: .editingChanged)
         return textField
     }
 
     func updateUIView(_ uiView: UITextField, context: Context) {
         context.coordinator.parent = self
+        uiView.font = font
         // Never overwrite text the user is actively typing — only push the SwiftUI-side value
         // in when the field isn't first responder (e.g. the initial value, or a change made
         // elsewhere, like the +/- stepper on the unit-quantity variant of this form).
         guard !uiView.isFirstResponder else { return }
-        uiView.text = Self.formatter.string(from: NSNumber(value: value)) ?? "0"
+        uiView.text = formatter.string(from: NSNumber(value: value)) ?? "0"
     }
 
     func makeCoordinator() -> Coordinator {
@@ -53,7 +76,7 @@ struct TrailingCursorNumberField: UIViewRepresentable {
             // A partial in-progress value (e.g. "3." while typing "3.5") won't parse yet —
             // leave the bound value as-is rather than snapping it to 0 mid-edit.
             guard let text = textField.text,
-                  let number = TrailingCursorNumberField.formatter.number(from: text) else { return }
+                  let number = parent.formatter.number(from: text) else { return }
             parent.value = number.doubleValue
         }
 

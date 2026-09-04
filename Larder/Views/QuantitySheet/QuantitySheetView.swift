@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum QuantitySheetMode {
     case checkIn
@@ -96,9 +97,22 @@ struct QuantitySheetView: View {
                                 .frame(width: 44, height: 44)
                                 .overlay(Rectangle().strokeBorder(Color.larderInk, lineWidth: 1))
                         }
-                        Text(item.formattedQuantity(quantity))
-                            .font(LarderFont.quantityValue())
-                            .frame(maxWidth: .infinity)
+                        HStack(spacing: 6) {
+                            // Bound to the raw stored quantity (base unit -- grams/mL, not the
+                            // kg/L rollup `formattedQuantity` shows elsewhere) so a typed number
+                            // always means exactly what it says. Cursor-to-end-on-focus behavior
+                            // comes from `TrailingCursorNumberField` itself.
+                            TrailingCursorNumberField(
+                                value: $quantity,
+                                allowsDecimal: item.kind == .bulk,
+                                font: .systemFont(ofSize: 20, weight: .bold)
+                            )
+                            .frame(width: 70)
+                            Text(item.quantityUnitSuffix(for: quantity))
+                                .font(LarderFont.quantityUnit())
+                                .foregroundStyle(Color.larderSecondaryText)
+                        }
+                        .frame(maxWidth: .infinity)
                         Button {
                             quantity += stepSize
                         } label: {
@@ -131,6 +145,16 @@ struct QuantitySheetView: View {
             .padding(20)
         }
         .background(Color.larderBackground.ignoresSafeArea())
+        // `simultaneousGesture` (not `onTapGesture`) fires alongside every row's own tap
+        // handling rather than intercepting it, so this doesn't interfere with the +/- buttons,
+        // a batch chip, or the graphical DatePicker — it just also resigns whatever's currently
+        // first responder (the UIKit-bridged quantity field) on every tap. Mirrors
+        // `NewProductFormView`'s identical need for the same underlying field.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        )
     }
 
     private func confirm() {

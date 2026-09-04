@@ -69,6 +69,22 @@ struct Item: Identifiable, Codable, Hashable {
         }
     }
 
+    /// The unit/noun suffix alone, in the same base-unit terms `formattedQuantity` uses below the
+    /// 1000-gram/mL rollup threshold — for an editable quantity field, where the typed number has
+    /// to map 1:1 to the stored value. Unlike `formattedQuantity`, this never rolls a bulk
+    /// quantity up to kg/L: doing so would silently change what a typed number means (typing
+    /// "1500" next to a "kg" label would mean 1500 kg, not 1500 g).
+    func quantityUnitSuffix(for qty: Double) -> String {
+        switch kind {
+        case .unit:
+            let count = Int(qty.rounded())
+            let word = noun ?? "unit"
+            return count == 1 ? word : Self.pluralize(word)
+        case .bulk:
+            return unit ?? "g"
+        }
+    }
+
     private static func pluralize(_ word: String) -> String {
         guard let last = word.last else { return word }
         if "sxz".contains(last) || word.hasSuffix("ch") || word.hasSuffix("sh") {
