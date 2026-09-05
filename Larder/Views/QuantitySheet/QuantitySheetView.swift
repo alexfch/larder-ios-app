@@ -79,7 +79,7 @@ struct QuantitySheetView: View {
                             .font(LarderFont.eyebrow())
                             .foregroundStyle(Color.larderSecondaryText)
                         DatePicker("", selection: $expDate, displayedComponents: .date)
-                            .datePickerStyle(.graphical)
+                            .datePickerStyle(.wheel)
                             .labelsHidden()
                     }
                 }

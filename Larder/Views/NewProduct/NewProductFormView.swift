@@ -109,6 +109,7 @@ struct NewProductFormView: View {
 
                 Section("Best Before") {
                     DatePicker("Expiration date", selection: $expDate, displayedComponents: .date)
+                        .datePickerStyle(.wheel)
                 }
 
                 Section("Photo") {
