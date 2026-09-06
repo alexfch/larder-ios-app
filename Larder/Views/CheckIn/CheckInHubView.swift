@@ -105,7 +105,13 @@ struct CheckInHubView: View {
                     }
                 }
             case .newProduct(let barcode, let name):
-                NewProductFormView(prefilledBarcode: barcode, prefilledName: name)
+                // Reassigning `activeSheet` to `.quantity(item)` here -- rather than having
+                // `NewProductFormView` present or dismiss anything itself -- is the same atomic
+                // single-sheet transition described on `ActiveSheet` above: the New Product
+                // sheet is replaced by the Check In sheet for the item that was just created.
+                NewProductFormView(prefilledBarcode: barcode, prefilledName: name) { item in
+                    activeSheet = .quantity(item)
+                }
             }
         }
     }

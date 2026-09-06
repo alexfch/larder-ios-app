@@ -35,6 +35,8 @@ struct BackupItem: Codable {
     let kind: ItemKind
     let unit: String?
     let noun: String?
+    let bulkEquivalentAmount: Double?
+    let bulkEquivalentUnit: String?
     let createdAt: Date
     let transactions: [BackupTransaction]
 }
@@ -81,6 +83,8 @@ enum BackupService {
                 kind: item.kind,
                 unit: item.unit,
                 noun: item.noun,
+                bulkEquivalentAmount: item.bulkEquivalentAmount,
+                bulkEquivalentUnit: item.bulkEquivalentUnit,
                 createdAt: item.createdAt,
                 transactions: store.transactions(for: item.id).map {
                     BackupTransaction(
@@ -143,6 +147,8 @@ enum BackupService {
                 kind: backupItem.kind,
                 unit: backupItem.unit,
                 noun: backupItem.noun,
+                bulkEquivalentAmount: backupItem.bulkEquivalentAmount,
+                bulkEquivalentUnit: backupItem.bulkEquivalentUnit,
                 createdAt: backupItem.createdAt
             )
             try store.addItem(item)

@@ -122,6 +122,17 @@ struct QuantitySheetView: View {
                         }
                     }
                     .foregroundStyle(Color.larderInk)
+
+                    // Live bulk-equivalent readout (e.g. "2.5 kg" for 5 packs of a 500 g item) --
+                    // purely derived from the pack count above, per `Item.bulkEquivalentText`'s
+                    // doc comment. nil, and this shows nothing, for any item without a known pack
+                    // size or a `.bulk`-kind item (already tracked directly in bulk terms).
+                    if let bulkTotal = item.bulkEquivalentText(for: quantity) {
+                        Text("≈ \(bulkTotal)")
+                            .font(LarderFont.quantityUnit())
+                            .foregroundStyle(Color.larderSecondaryText)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 }
 
                 if let errorMessage {

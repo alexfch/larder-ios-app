@@ -3,22 +3,24 @@ import PhotosUI
 import UIKit
 import AVFoundation
 
-/// FR-3.1/FR-3.2: captures name, barcode (optional), unit/bulk kind, quantity, expiry, and an
-/// optional photo. Saving performs the item's initial check-in.
+/// FR-3.1/FR-3.2: captures name, barcode (optional), unit name (optional), and an optional
+/// known bulk size per unit (e.g. a 500 g pack of spaghetti), plus an optional photo. Saving
+/// only creates the item -- it does not check anything in itself. `onSaved` hands the newly
+/// created item back to the presenter, which is expected to immediately follow up with the
+/// existing Check In flow (`QuantitySheetView(mode: .checkIn)`) so the user picks quantity and
+/// best-before date there, exactly as they would for an existing product.
 struct NewProductFormView: View {
     @Environment(CatalogStore.self) private var store
-    @Environment(ToastCenter.self) private var toastCenter
     @Environment(\.dismiss) private var dismiss
 
     private let prefilledBarcode: String?
+    private let onSaved: (Item) -> Void
 
     @State private var name: String
     @State private var barcode: String
-    @State private var kind: ItemKind = .unit
     @State private var noun: String = ""
+    @State private var bulkAmount: Double = 0
     @State private var bulkUnit: String = "g"
-    @State private var quantity: Double = 1
-    @State private var expDate: Date = Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
     @State private var showCamera = false
@@ -27,7 +29,7 @@ struct NewProductFormView: View {
     @State private var lookupState: LookupState = .idle
     @State private var isSaving = false
     @State private var showPhotosPicker = false
-    
+
     private enum LookupState {
         case idle, loading, found, notFound
     }
@@ -37,8 +39,9 @@ struct NewProductFormView: View {
     /// `init` and a contributing factor to the barcode-prefill bug. The lookup network call
     /// itself stays a `.task` side effect below — that's not a state-seeding concern, just work
     /// tied to the view's lifetime.
-    init(prefilledBarcode: String? = nil, prefilledName: String = "") {
+    init(prefilledBarcode: String? = nil, prefilledName: String = "", onSaved: @escaping (Item) -> Void = { _ in }) {
         self.prefilledBarcode = prefilledBarcode
+        self.onSaved = onSaved
         _name = State(initialValue: prefilledName)
         _barcode = State(initialValue: prefilledBarcode ?? "")
     }
@@ -76,40 +79,26 @@ struct NewProductFormView: View {
                         EmptyView()
                     }
                 }
-
-                Section("Kind") {
-                    Picker("Kind", selection: $kind) {
-                        Text("Whole units").tag(ItemKind.unit)
-                        Text("Weight / Volume").tag(ItemKind.bulk)
-                    }
-                    .pickerStyle(.segmented)
-
-                    if kind == .unit {
-                        TextField("Unit name (jar, tin, egg…)", text: $noun)
-                        Stepper(value: $quantity, in: 0...9999, step: 1) {
-                            Text("Quantity: \(Int(quantity))")
-                        }
-                    } else {
-                        Picker("Unit", selection: $bulkUnit) {
+                // Optional: for a packaged product (e.g. spaghetti, 1 pack = 500 g), lets
+                // on-hand totals also show the bulk equivalent -- leave the amount at 0 to skip,
+                // for anything where a single unit doesn't have a meaningful bulk size, like eggs.
+                
+                Section("Unit details"){
+                    TextField("Name (jar, tin, egg…)", text: $noun)
+                        .textInputAutocapitalization(.never)
+                    HStack {
+                        Text("Bulk size")
+                        Spacer()
+                        TrailingCursorNumberField(value: $bulkAmount)
+                        Picker("", selection: $bulkUnit) {
                             Text("g").tag("g")
                             Text("kg").tag("kg")
-                            Text("lbs").tag("lbs")
+                            Text("lb").tag("lb")
                             Text("ml").tag("ml")
                             Text("l").tag("l")
                         }
-                        .pickerStyle(.segmented)
-                        HStack {
-                            Text("Amount checked in")
-                            Spacer()
-                            TrailingCursorNumberField(value: $quantity)
-                                .frame(width: 100)
-                        }
+                        .pickerStyle(.menu)
                     }
-                }
-
-                Section("Best Before") {
-                    DatePicker("Expiration date", selection: $expDate, displayedComponents: .date)
-                        .datePickerStyle(.wheel)
                 }
 
                 Section("Photo") {
@@ -133,7 +122,7 @@ struct NewProductFormView: View {
                                     .frame(width: 44, height: 44)
                                     .clipped()
                             }
-                            Text(photoData == nil ? "Add a photo" : "Change photo")
+                            Text(photoData == nil ? "Add photo" : "Change photo")
                         }
                     }
                     .photosPicker(isPresented: $showPhotosPicker, selection: $photoItem, matching: .images)
@@ -149,13 +138,11 @@ struct NewProductFormView: View {
                 }
             }
             // Form provides no built-in "tap anywhere to dismiss the keyboard" behavior — today
-            // the keyboard only goes away when focus moves to another control (e.g. switching
-            // Kind away from Weight/Volume removes the focused field from the hierarchy
-            // entirely). `simultaneousGesture` fires alongside every row's own tap handling
-            // rather than intercepting it, so this doesn't interfere with picking a Kind segment,
-            // tapping the photo menu, etc. — it just also resigns whatever's currently first
-            // responder (the keyboard-presenting text field, whether SwiftUI-native or the
-            // UIKit-bridged Amount field) on every tap.
+            // the keyboard only goes away when focus moves to another control. `simultaneousGesture`
+            // fires alongside every row's own tap handling rather than intercepting it, so this
+            // doesn't interfere with picking a wheel value, tapping the photo menu, etc. — it just
+            // also resigns whatever's currently first responder (the keyboard-presenting text
+            // field, whether SwiftUI-native or the UIKit-bridged Amount field) on every tap.
             .simultaneousGesture(
                 TapGesture().onEnded {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -269,16 +256,19 @@ struct NewProductFormView: View {
             id: itemId,
             name: name,
             barcode: normalizedBarcode,
-            kind: kind,
-            unit: kind == .bulk ? bulkUnit : nil,
-            noun: kind == .unit ? (noun.isEmpty ? "unit" : noun) : nil,
+            kind: .unit,
+            noun: noun.isEmpty ? "unit" : noun,
+            bulkEquivalentAmount: bulkAmount > 0 ? bulkAmount : nil,
+            bulkEquivalentUnit: bulkAmount > 0 ? bulkUnit : nil,
             photoStorageRef: photoStorageRef
         )
         do {
             try store.addItem(item)
-            try StockService.checkIn(itemId: item.id, qty: quantity, exp: expDate, store: store)
-            toastCenter.show("\(item.name) added to Stock")
-            dismiss()
+            // Hand off to the presenter rather than checking in or dismissing here -- it's
+            // expected to immediately switch to `QuantitySheetView(mode: .checkIn)` for this
+            // item, mirroring how `ManualPickListView.onAddNewProduct` already hands a typed
+            // name back up rather than acting on it directly.
+            onSaved(item)
         } catch {
             barcodeError = error.localizedDescription
         }

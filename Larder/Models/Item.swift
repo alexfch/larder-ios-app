@@ -14,6 +14,17 @@ struct Item: Identifiable, Codable, Hashable {
     var unit: String?
     /// Unit-only: free-text noun, e.g. "tin", "jar", "egg"
     var noun: String?
+    /// Unit-only, both optional together: how much bulk one single unit/pack contains (e.g. a
+    /// 500 g pack of spaghetti) — lets a packaged product's on-hand total show its bulk
+    /// equivalent (e.g. "5 packs (2.5 kg)") without changing how check-in/check-out work at all.
+    /// The transaction log still records whole packs exactly as it always has for `.unit` items;
+    /// this is a purely derived display computed from that count, never its own stored total, for
+    /// the same reason `onHandTotal` itself isn't stored (see this struct's top-level doc
+    /// comment). nil for a unit item with no known pack size (e.g. eggs), and always nil for
+    /// `.bulk` items, which are already tracked directly in bulk terms.
+    var bulkEquivalentAmount: Double?
+    /// "g" | "kg" | "lbs" | "ml" | "l" -- same vocabulary as the existing bulk `unit` field.
+    var bulkEquivalentUnit: String?
     /// Cloud Storage for Firebase object path (ADR-0003, Phase 2) — set by `NewProductFormView`
     /// at save time, once `PhotoStorage.upload` has confirmed the object exists; nil for an item
     /// with no photo. See `storage.rules` for the matching access rule and `ItemThumbnail` for
@@ -28,6 +39,8 @@ struct Item: Identifiable, Codable, Hashable {
         kind: ItemKind,
         unit: String? = nil,
         noun: String? = nil,
+        bulkEquivalentAmount: Double? = nil,
+        bulkEquivalentUnit: String? = nil,
         photoStorageRef: String? = nil,
         createdAt: Date = .now
     ) {
@@ -37,6 +50,8 @@ struct Item: Identifiable, Codable, Hashable {
         self.kind = kind
         self.unit = unit
         self.noun = noun
+        self.bulkEquivalentAmount = bulkEquivalentAmount
+        self.bulkEquivalentUnit = bulkEquivalentUnit
         self.photoStorageRef = photoStorageRef
         self.createdAt = createdAt
     }
@@ -47,25 +62,43 @@ struct Item: Identifiable, Codable, Hashable {
         return String(letters).uppercased()
     }
 
-    /// Formats a quantity per FR-2.3: whole units show an integer + pluralized noun,
-    /// bulk items show g/ml below 1000 and roll up to kg/L (2 decimals) at or above it.
+    /// Formats a quantity per FR-2.3: whole units show an integer + pluralized noun, optionally
+    /// followed by its bulk equivalent when `bulkEquivalentAmount`/`bulkEquivalentUnit` are set
+    /// (e.g. "5 packs (2.5 kg)"); bulk items show g/ml below 1000 and roll up to kg/L (2 decimals)
+    /// at or above it.
     func formattedQuantity(_ qty: Double) -> String {
         switch kind {
         case .unit:
             let count = Int(qty.rounded())
             let word = noun ?? "unit"
             let pluralized = count == 1 ? word : Self.pluralize(word)
-            return "\(count) \(pluralized)"
-        case .bulk:
-            let baseUnit = unit ?? "g"
-            if qty < 1000 {
-                let formatted = qty == qty.rounded() ? String(Int(qty)) : String(format: "%.1f", qty)
-                return "\(formatted) \(baseUnit)"
-            } else {
-                let rolledUp = qty / 1000
-                let rolledUnit = baseUnit == "ml" ? "L" : "kg"
-                return String(format: "%.2f %@", rolledUp, rolledUnit)
+            var result = "\(count) \(pluralized)"
+            if let bulkTotal = bulkEquivalentText(for: qty) {
+                result += " (\(bulkTotal))"
             }
+            return result
+        case .bulk:
+            return Self.formattedBulkAmount(qty, unit: unit ?? "g")
+        }
+    }
+
+    /// The bulk-equivalent total alone (e.g. "2.5 kg" for 5 packs of a 500 g item), for a caller
+    /// that wants to show it separately from the pack count rather than as part of
+    /// `formattedQuantity`'s combined string — `QuantitySheetView` uses this to update the total
+    /// live as the pack count changes. nil whenever there's no bulk equivalent to show.
+    func bulkEquivalentText(for qty: Double) -> String? {
+        guard kind == .unit, let bulkEquivalentAmount, let bulkEquivalentUnit else { return nil }
+        return Self.formattedBulkAmount(qty * bulkEquivalentAmount, unit: bulkEquivalentUnit)
+    }
+
+    private static func formattedBulkAmount(_ amount: Double, unit: String) -> String {
+        if amount < 1000 {
+            let formatted = amount == amount.rounded() ? String(Int(amount)) : String(format: "%.1f", amount)
+            return "\(formatted) \(unit)"
+        } else {
+            let rolledUp = amount / 1000
+            let rolledUnit = unit == "ml" ? "L" : "kg"
+            return String(format: "%.2f %@", rolledUp, rolledUnit)
         }
     }
 
