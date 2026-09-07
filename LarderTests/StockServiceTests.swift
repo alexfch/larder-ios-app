@@ -60,7 +60,7 @@ final class StockServiceTests: XCTestCase {
         try StockService.checkOut(itemId: item.id, qty: 3, store: store)
 
         XCTAssertEqual(lots(item).count, 1)
-        XCTAssertEqual(lots(item).first?.exp, newer)
+        XCTAssertEqual(lots(item).first?.exp ?? nil, newer)
         XCTAssertEqual(onHandTotal(item), 5)
     }
 
