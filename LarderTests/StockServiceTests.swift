@@ -10,7 +10,7 @@ final class StockServiceTests: XCTestCase {
     }
 
     private func makeItem(name: String = "Tinned Tomatoes") -> Item {
-        let item = Item(name: name, kind: .unit, noun: "tin")
+        let item = Item(name: name, packaging: .packaged, packageName: "tin")
         try? store.addItem(item)
         return item
     }

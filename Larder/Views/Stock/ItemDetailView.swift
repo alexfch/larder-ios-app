@@ -42,7 +42,7 @@ struct ItemDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.name)
                         .font(LarderFont.screenTitle())
-                    Text("\(item.barcode ?? "no barcode") · counted in \(item.kind == .unit ? (item.noun ?? "unit") : (item.unit ?? "g"))")
+                    Text("\(item.barcode ?? "no barcode") · counted in \(item.quantityUnitSuffix(for: 1))")
                         .font(.system(size: 14))
                         .foregroundStyle(Color.larderSecondaryText)
                 }

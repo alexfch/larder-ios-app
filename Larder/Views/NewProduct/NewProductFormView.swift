@@ -3,12 +3,16 @@ import PhotosUI
 import UIKit
 import AVFoundation
 
-/// FR-3.1/FR-3.2: captures name, barcode (optional), unit name (optional), and an optional
-/// known bulk size per unit (e.g. a 500 g pack of spaghetti), plus an optional photo. Saving
-/// only creates the item -- it does not check anything in itself. `onSaved` hands the newly
-/// created item back to the presenter, which is expected to immediately follow up with the
-/// existing Check In flow (`QuantitySheetView(mode: .checkIn)`) so the user picks quantity and
-/// best-before date there, exactly as they would for an existing product.
+/// FR-3.1/FR-3.2: captures name, barcode (optional), packaged/non-packaged shape, and an
+/// optional photo. Saving only creates the item -- it does not check anything in itself.
+/// `onSaved` hands the newly created item back to the presenter, which is expected to
+/// immediately follow up with the existing Check In flow (`QuantitySheetView(mode: .checkIn)`)
+/// so the user picks quantity and best-before date there, exactly as they would for an existing
+/// product.
+///
+/// The "Type" and "Measure by" pickers below map directly onto `Item.packaging`/
+/// `Item.measurementStyle` -- see that struct's doc comment for the three shapes a product can
+/// take (packaged / non-packaged-counted / non-packaged-bulk).
 struct NewProductFormView: View {
     @Environment(CatalogStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -19,8 +23,10 @@ struct NewProductFormView: View {
     @State private var name: String
     @State private var barcode: String
     @State private var noun: String = ""
-    @State private var bulkAmount: Double = 0
-    @State private var bulkUnit: String = "g"
+    @State private var packageAmount: Double = 0
+    @State private var measurementUnit: String = "g"
+    @State private var packaging: PackagingType = .packaged
+    @State private var measurementStyle: MeasurementStyle = .bulk
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
     @State private var showCamera = false
@@ -79,25 +85,55 @@ struct NewProductFormView: View {
                         EmptyView()
                     }
                 }
-                // Optional: for a packaged product (e.g. spaghetti, 1 pack = 500 g), lets
-                // on-hand totals also show the bulk equivalent -- leave the amount at 0 to skip,
-                // for anything where a single unit doesn't have a meaningful bulk size, like eggs.
-                
-                Section("Unit details"){
-                    TextField("Name (jar, tin, egg…)", text: $noun)
-                        .textInputAutocapitalization(.never)
-                    HStack {
-                        Text("Bulk size")
-                        Spacer()
-                        TrailingCursorNumberField(value: $bulkAmount)
-                        Picker("", selection: $bulkUnit) {
+
+                Picker("Type", selection: $packaging) {
+                    Text("packaged").tag(PackagingType.packaged)
+                    Text("non-packaged").tag(PackagingType.nonPackaged)
+                }
+                .pickerStyle(.segmented)
+
+                if packaging == .packaged {
+                    // Amount/unit are optional -- leave the amount at 0 to skip, for anything
+                    // where a single package doesn't have a meaningful bulk size, like a jar of
+                    // pickles bought by the jar rather than by weight. See
+                    // `Item.packageBulkEquivalentText` for how this becomes the on-hand display's
+                    // "(2.5 kg)" suffix.
+                    Section("Package details") {
+                        TextField("Name (jar, tin, egg…)", text: $noun)
+                            .textInputAutocapitalization(.never)
+                        HStack {
+                            Text("Amount per package")
+                            Spacer()
+                            TrailingCursorNumberField(value: $packageAmount)
+                        }
+                        Picker("Units of measurement", selection: $measurementUnit) {
                             Text("g").tag("g")
                             Text("kg").tag("kg")
                             Text("lb").tag("lb")
                             Text("ml").tag("ml")
                             Text("l").tag("l")
                         }
-                        .pickerStyle(.menu)
+                        .pickerStyle(.segmented)
+                    }
+                } else {
+                    Picker("Measure by", selection: $measurementStyle) {
+                        Text("item").tag(MeasurementStyle.count)
+                        Text("weight").tag(MeasurementStyle.bulk)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if measurementStyle == .count {
+                        TextField("Item name (egg, apple, lemon…)", text: $noun)
+                            .textInputAutocapitalization(.never)
+                    } else {
+                        Picker("Units of measurement", selection: $measurementUnit) {
+                            Text("g").tag("g")
+                            Text("kg").tag("kg")
+                            Text("lb").tag("lb")
+                            Text("ml").tag("ml")
+                            Text("l").tag("l")
+                        }
+                        .pickerStyle(.segmented)
                     }
                 }
 
@@ -140,7 +176,7 @@ struct NewProductFormView: View {
             // Form provides no built-in "tap anywhere to dismiss the keyboard" behavior — today
             // the keyboard only goes away when focus moves to another control. `simultaneousGesture`
             // fires alongside every row's own tap handling rather than intercepting it, so this
-            // doesn't interfere with picking a wheel value, tapping the photo menu, etc. — it just
+            // doesn't interfere with picking a segment, tapping the photo menu, etc. — it just
             // also resigns whatever's currently first responder (the keyboard-presenting text
             // field, whether SwiftUI-native or the UIKit-bridged Amount field) on every tap.
             .simultaneousGesture(
@@ -252,16 +288,43 @@ struct NewProductFormView: View {
             }
         }
 
-        let item = Item(
-            id: itemId,
-            name: name,
-            barcode: normalizedBarcode,
-            kind: .unit,
-            noun: noun.isEmpty ? "unit" : noun,
-            bulkEquivalentAmount: bulkAmount > 0 ? bulkAmount : nil,
-            bulkEquivalentUnit: bulkAmount > 0 ? bulkUnit : nil,
-            photoStorageRef: photoStorageRef
-        )
+        let item: Item
+        switch packaging {
+        case .packaged:
+            item = Item(
+                id: itemId,
+                name: name,
+                barcode: normalizedBarcode,
+                packaging: .packaged,
+                packageName: noun.isEmpty ? nil : noun,
+                packageAmount: packageAmount > 0 ? packageAmount : nil,
+                packageMeasurementUnit: packageAmount > 0 ? measurementUnit : nil,
+                photoStorageRef: photoStorageRef
+            )
+        case .nonPackaged:
+            switch measurementStyle {
+            case .count:
+                item = Item(
+                    id: itemId,
+                    name: name,
+                    barcode: normalizedBarcode,
+                    packaging: .nonPackaged,
+                    measurementStyle: .count,
+                    countUnitName: noun.isEmpty ? nil : noun,
+                    photoStorageRef: photoStorageRef
+                )
+            case .bulk:
+                item = Item(
+                    id: itemId,
+                    name: name,
+                    barcode: normalizedBarcode,
+                    packaging: .nonPackaged,
+                    measurementStyle: .bulk,
+                    bulkMeasurementUnit: measurementUnit,
+                    photoStorageRef: photoStorageRef
+                )
+            }
+        }
         do {
             try store.addItem(item)
             // Hand off to the presenter rather than checking in or dismissing here -- it's

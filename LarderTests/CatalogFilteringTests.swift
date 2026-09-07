@@ -14,7 +14,7 @@ final class CatalogFilteringTests: XCTestCase {
     }
 
     private func makeItem(name: String, qty: Double? = nil, exp: Date = .now) throws -> Item {
-        let item = Item(name: name, kind: .unit, noun: "tin")
+        let item = Item(name: name, packaging: .packaged, packageName: "tin")
         try store.addItem(item)
         if let qty {
             try StockService.checkIn(itemId: item.id, qty: qty, exp: exp, store: store)

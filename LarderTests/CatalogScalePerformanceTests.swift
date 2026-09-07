@@ -33,7 +33,7 @@ final class CatalogScalePerformanceTests: XCTestCase {
         var items: [Item] = []
         items.reserveCapacity(count)
         for index in 0..<count {
-            let item = Item(name: "Item \(index)", barcode: String(format: "%013d", index), kind: .unit, noun: "tin")
+            let item = Item(name: "Item \(index)", barcode: String(format: "%013d", index), packaging: .packaged, packageName: "tin")
             try store.addItem(item)
             try StockService.checkIn(itemId: item.id, qty: 3, exp: Date(timeIntervalSinceNow: Double(index) * 3600), store: store)
             items.append(item)

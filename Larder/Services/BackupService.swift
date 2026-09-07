@@ -32,11 +32,13 @@ struct BackupItem: Codable {
     let id: String
     let name: String
     let barcode: String?
-    let kind: ItemKind
-    let unit: String?
-    let noun: String?
-    let bulkEquivalentAmount: Double?
-    let bulkEquivalentUnit: String?
+    let packaging: PackagingType
+    let packageName: String?
+    let packageAmount: Double?
+    let packageMeasurementUnit: String?
+    let measurementStyle: MeasurementStyle?
+    let countUnitName: String?
+    let bulkMeasurementUnit: String?
     let createdAt: Date
     let transactions: [BackupTransaction]
 }
@@ -80,11 +82,13 @@ enum BackupService {
                 id: item.id,
                 name: item.name,
                 barcode: item.barcode,
-                kind: item.kind,
-                unit: item.unit,
-                noun: item.noun,
-                bulkEquivalentAmount: item.bulkEquivalentAmount,
-                bulkEquivalentUnit: item.bulkEquivalentUnit,
+                packaging: item.packaging,
+                packageName: item.packageName,
+                packageAmount: item.packageAmount,
+                packageMeasurementUnit: item.packageMeasurementUnit,
+                measurementStyle: item.measurementStyle,
+                countUnitName: item.countUnitName,
+                bulkMeasurementUnit: item.bulkMeasurementUnit,
                 createdAt: item.createdAt,
                 transactions: store.transactions(for: item.id).map {
                     BackupTransaction(
@@ -144,11 +148,13 @@ enum BackupService {
                 id: backupItem.id,
                 name: backupItem.name,
                 barcode: backupItem.barcode,
-                kind: backupItem.kind,
-                unit: backupItem.unit,
-                noun: backupItem.noun,
-                bulkEquivalentAmount: backupItem.bulkEquivalentAmount,
-                bulkEquivalentUnit: backupItem.bulkEquivalentUnit,
+                packaging: backupItem.packaging,
+                packageName: backupItem.packageName,
+                packageAmount: backupItem.packageAmount,
+                packageMeasurementUnit: backupItem.packageMeasurementUnit,
+                measurementStyle: backupItem.measurementStyle,
+                countUnitName: backupItem.countUnitName,
+                bulkMeasurementUnit: backupItem.bulkMeasurementUnit,
                 createdAt: backupItem.createdAt
             )
             try store.addItem(item)

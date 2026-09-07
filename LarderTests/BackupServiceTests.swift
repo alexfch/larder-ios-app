@@ -14,7 +14,7 @@ final class BackupServiceTests: XCTestCase {
     }
 
     func testExportThenImportIntoAFreshStoreRestoresTheCatalog() throws {
-        let beans = Item(name: "Beans", barcode: "1111111111111", kind: .unit, noun: "tin")
+        let beans = Item(name: "Beans", barcode: "1111111111111", packaging: .packaged, packageName: "tin")
         try store.addItem(beans)
         try StockService.checkIn(itemId: beans.id, qty: 5, exp: .now, store: store)
         try StockService.checkOut(itemId: beans.id, qty: 2, store: store)
@@ -37,7 +37,7 @@ final class BackupServiceTests: XCTestCase {
     }
 
     func testImportSkipsAnItemAlreadyPresentByID() throws {
-        let beans = Item(name: "Beans", kind: .unit, noun: "tin")
+        let beans = Item(name: "Beans", packaging: .packaged, packageName: "tin")
         try store.addItem(beans)
         try StockService.checkIn(itemId: beans.id, qty: 5, exp: .now, store: store)
 
@@ -53,7 +53,7 @@ final class BackupServiceTests: XCTestCase {
 
     func testImportSkipsABarcodeConflictWithoutOverwritingTheExistingItem() throws {
         // Export an item with a given barcode...
-        let original = Item(name: "Beans", barcode: "2222222222222", kind: .unit, noun: "tin")
+        let original = Item(name: "Beans", barcode: "2222222222222", packaging: .packaged, packageName: "tin")
         try store.addItem(original)
         try StockService.checkIn(itemId: original.id, qty: 5, exp: .now, store: store)
         let exported = try BackupService.export(store: store)
@@ -61,7 +61,7 @@ final class BackupServiceTests: XCTestCase {
         // ...then import into a store that already has a DIFFERENT item using that same barcode
         // (different id, e.g. re-added by hand after the original backup was taken).
         let freshStore = InMemoryCatalogStore()
-        let conflicting = Item(name: "Different Beans", barcode: "2222222222222", kind: .unit, noun: "tin")
+        let conflicting = Item(name: "Different Beans", barcode: "2222222222222", packaging: .packaged, packageName: "tin")
         try freshStore.addItem(conflicting)
         try StockService.checkIn(itemId: conflicting.id, qty: 9, exp: .now, store: freshStore)
 

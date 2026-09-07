@@ -29,7 +29,9 @@ struct QuantitySheetView: View {
         _selectedLot = State(initialValue: preselectedLot)
     }
 
-    private var stepSize: Double { item.kind == .unit ? 1 : (item.unit == "ml" || item.unit == "g" ? 50 : 1) }
+    private var stepSize: Double {
+        item.isCountedInWholeUnits ? 1 : (item.continuousMeasurementUnit == "ml" || item.continuousMeasurementUnit == "g" ? 50 : 1)
+    }
 
     private var sortedLots: [Lot] {
         CatalogDerivation.sortedLots(itemId: item.id, transactions: store.transactions)
@@ -104,7 +106,7 @@ struct QuantitySheetView: View {
                             // comes from `TrailingCursorNumberField` itself.
                             TrailingCursorNumberField(
                                 value: $quantity,
-                                allowsDecimal: item.kind == .bulk,
+                                allowsDecimal: !item.isCountedInWholeUnits,
                                 font: .systemFont(ofSize: 20, weight: .bold)
                             )
                             .frame(width: 70)
@@ -124,10 +126,11 @@ struct QuantitySheetView: View {
                     .foregroundStyle(Color.larderInk)
 
                     // Live bulk-equivalent readout (e.g. "2.5 kg" for 5 packs of a 500 g item) --
-                    // purely derived from the pack count above, per `Item.bulkEquivalentText`'s
-                    // doc comment. nil, and this shows nothing, for any item without a known pack
-                    // size or a `.bulk`-kind item (already tracked directly in bulk terms).
-                    if let bulkTotal = item.bulkEquivalentText(for: quantity) {
+                    // purely derived from the pack count above, per
+                    // `Item.packageBulkEquivalentText`'s doc comment. nil, and this shows
+                    // nothing, for any non-packaged item or a packaged item with no known bulk
+                    // size (already tracked directly in bulk terms, or with nothing to convert).
+                    if let bulkTotal = item.packageBulkEquivalentText(for: quantity) {
                         Text("≈ \(bulkTotal)")
                             .font(LarderFont.quantityUnit())
                             .foregroundStyle(Color.larderSecondaryText)
