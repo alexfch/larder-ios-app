@@ -12,6 +12,11 @@ struct EditTransactionSheet: View {
     let transaction: Transaction
 
     @State private var quantity: Double
+    /// Always a concrete date, even when `transaction.exp` was nil -- only read when
+    /// `item.noExpirationDate` is false, matching `QuantitySheetView`'s own Best Before section.
+    /// Falls back to 30 days out for the rare case of a dated item whose existing transaction
+    /// somehow has no date (e.g. `noExpirationDate` was toggled off after this batch was checked
+    /// in), same fallback `QuantitySheetView` uses for a fresh check-in.
     @State private var expDate: Date
     @State private var errorMessage: String?
 
@@ -19,7 +24,7 @@ struct EditTransactionSheet: View {
         self.item = item
         self.transaction = transaction
         _quantity = State(initialValue: abs(transaction.qty))
-        _expDate = State(initialValue: transaction.exp)
+        _expDate = State(initialValue: transaction.exp ?? Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now)
     }
 
     var body: some View {
@@ -35,8 +40,10 @@ struct EditTransactionSheet: View {
                             .multilineTextAlignment(.trailing)
                     }
                 }
-                Section("Batch Date") {
-                    DatePicker("Date", selection: $expDate, displayedComponents: .date)
+                if !item.noExpirationDate {
+                    Section("Batch Date") {
+                        DatePicker("Date", selection: $expDate, displayedComponents: .date)
+                    }
                 }
                 if let errorMessage {
                     Text(errorMessage)
@@ -58,7 +65,8 @@ struct EditTransactionSheet: View {
     private func save() {
         do {
             let signedQty = transaction.action == .adjust ? (transaction.qty < 0 ? -quantity : quantity) : quantity
-            try StockService.edit(transaction, newQty: signedQty, newExp: expDate, store: store)
+            let newExp: Date? = item.noExpirationDate ? nil : expDate
+            try StockService.edit(transaction, newQty: signedQty, newExp: newExp, store: store)
             toastCenter.show("Movement updated")
             dismiss()
         } catch {

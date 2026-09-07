@@ -25,8 +25,10 @@ struct NewProductFormView: View {
     @State private var noun: String = ""
     @State private var packageAmount: Double = 0
     @State private var measurementUnit: String = "g"
+    @State private var allowsPartialCheckout = false
     @State private var packaging: PackagingType = .packaged
     @State private var measurementStyle: MeasurementStyle = .bulk
+    @State private var noExpirationDate = false
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
     @State private var showCamera = false
@@ -84,6 +86,10 @@ struct NewProductFormView: View {
                     default:
                         EmptyView()
                     }
+
+                    // Drives whether the Check In sheet that follows Save asks for a best-before
+                    // date at all -- see `QuantitySheetView`'s own Best Before section.
+                    Toggle("No expiration date", isOn: $noExpirationDate)
                 }
 
                 Picker("Type", selection: $packaging) {
@@ -114,6 +120,13 @@ struct NewProductFormView: View {
                             Text("l").tag("l")
                         }
                         .pickerStyle(.segmented)
+
+                        // Only meaningful once there's a known amount-per-package to convert
+                        // against -- see `Item.allowsPartialCheckout`'s doc comment for what this
+                        // changes about how check-out and on-hand totals work for this item.
+                        if packageAmount > 0 {
+                            Toggle("Allow checking out by weight/volume once opened", isOn: $allowsPartialCheckout)
+                        }
                     }
                 } else {
                     Picker("Measure by", selection: $measurementStyle) {
@@ -299,6 +312,8 @@ struct NewProductFormView: View {
                 packageName: noun.isEmpty ? nil : noun,
                 packageAmount: packageAmount > 0 ? packageAmount : nil,
                 packageMeasurementUnit: packageAmount > 0 ? measurementUnit : nil,
+                allowsPartialCheckout: packageAmount > 0 && allowsPartialCheckout,
+                noExpirationDate: noExpirationDate,
                 photoStorageRef: photoStorageRef
             )
         case .nonPackaged:
@@ -311,6 +326,7 @@ struct NewProductFormView: View {
                     packaging: .nonPackaged,
                     measurementStyle: .count,
                     countUnitName: noun.isEmpty ? nil : noun,
+                    noExpirationDate: noExpirationDate,
                     photoStorageRef: photoStorageRef
                 )
             case .bulk:
@@ -321,6 +337,7 @@ struct NewProductFormView: View {
                     packaging: .nonPackaged,
                     measurementStyle: .bulk,
                     bulkMeasurementUnit: measurementUnit,
+                    noExpirationDate: noExpirationDate,
                     photoStorageRef: photoStorageRef
                 )
             }

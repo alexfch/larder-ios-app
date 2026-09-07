@@ -36,9 +36,17 @@ struct BackupItem: Codable {
     let packageName: String?
     let packageAmount: Double?
     let packageMeasurementUnit: String?
+    /// Optional for the same reason `noExpirationDate` below is: a backup written before this
+    /// field existed decodes it as nil, treated as `false` on import.
+    let allowsPartialCheckout: Bool?
     let measurementStyle: MeasurementStyle?
     let countUnitName: String?
     let bulkMeasurementUnit: String?
+    /// Optional (unlike `Item.noExpirationDate`, which is required), matching this struct's own
+    /// doc comment: a backup written before this field existed decodes it as nil, treated as
+    /// `false` on import -- the same "safely decode as absent" behavior every other field added
+    /// here since the first backup format has.
+    let noExpirationDate: Bool?
     let createdAt: Date
     let transactions: [BackupTransaction]
 }
@@ -47,7 +55,7 @@ struct BackupTransaction: Codable {
     let id: String
     let action: TransactionAction
     let qty: Double
-    let exp: Date
+    let exp: Date?
     let occurredAt: Date
     let reasonTag: String?
 }
@@ -86,9 +94,11 @@ enum BackupService {
                 packageName: item.packageName,
                 packageAmount: item.packageAmount,
                 packageMeasurementUnit: item.packageMeasurementUnit,
+                allowsPartialCheckout: item.allowsPartialCheckout,
                 measurementStyle: item.measurementStyle,
                 countUnitName: item.countUnitName,
                 bulkMeasurementUnit: item.bulkMeasurementUnit,
+                noExpirationDate: item.noExpirationDate,
                 createdAt: item.createdAt,
                 transactions: store.transactions(for: item.id).map {
                     BackupTransaction(
@@ -152,9 +162,11 @@ enum BackupService {
                 packageName: backupItem.packageName,
                 packageAmount: backupItem.packageAmount,
                 packageMeasurementUnit: backupItem.packageMeasurementUnit,
+                allowsPartialCheckout: backupItem.allowsPartialCheckout ?? false,
                 measurementStyle: backupItem.measurementStyle,
                 countUnitName: backupItem.countUnitName,
                 bulkMeasurementUnit: backupItem.bulkMeasurementUnit,
+                noExpirationDate: backupItem.noExpirationDate ?? false,
                 createdAt: backupItem.createdAt
             )
             try store.addItem(item)

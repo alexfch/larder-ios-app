@@ -35,3 +35,13 @@ extension Date {
         return "in \(days) days"
     }
 }
+
+extension Optional where Wrapped == Date {
+    /// "2026-09-01" for a dated `Lot`/`Transaction.exp`, "no expiration date" for one checked in
+    /// against an `Item.noExpirationDate == true` product. The one shared phrasing for every
+    /// list/detail row that shows a lot's or transaction's optional best-before date.
+    var formattedExpirationDate: String {
+        guard let self else { return "no expiration date" }
+        return self.formatted(.iso8601.year().month().day())
+    }
+}

@@ -11,8 +11,9 @@ struct Transaction: Identifiable, Codable, Hashable {
     var itemId: String
     var action: TransactionAction
     var qty: Double
-    /// The date of the lot this transaction affects.
-    var exp: Date
+    /// The date of the lot this transaction affects, or nil for an item checked in with
+    /// `Item.noExpirationDate == true` -- see `Lot`'s doc comment for how a nil `exp` groups.
+    var exp: Date?
     var occurredAt: Date
     /// Set only on `.adjust` transactions produced by a count session.
     var reasonTag: String?
@@ -30,7 +31,7 @@ struct Transaction: Identifiable, Codable, Hashable {
         itemId: String,
         action: TransactionAction,
         qty: Double,
-        exp: Date,
+        exp: Date?,
         occurredAt: Date = .now,
         reasonTag: String? = nil,
         performedByUid: String? = nil

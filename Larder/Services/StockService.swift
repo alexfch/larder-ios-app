@@ -28,8 +28,8 @@ enum StockService {
 
     @MainActor
     @discardableResult
-    static func checkIn(itemId: String, qty: Double, exp: Date, store: CatalogWriting) throws -> Transaction {
-        let normalizedExp = Calendar.current.startOfDay(for: exp)
+    static func checkIn(itemId: String, qty: Double, exp: Date?, store: CatalogWriting) throws -> Transaction {
+        let normalizedExp = exp.map { Calendar.current.startOfDay(for: $0) }
         let transaction = Transaction(itemId: itemId, action: .checkIn, qty: qty, exp: normalizedExp)
         try store.addTransaction(transaction)
         return transaction
@@ -76,8 +76,8 @@ enum StockService {
     /// hypothetical world ever goes negative — one arithmetic pass, no intermediate lot state to
     /// protect.
     @MainActor
-    static func edit(_ transaction: Transaction, newQty: Double, newExp: Date, store: CatalogWriting) throws {
-        let normalizedNewExp = Calendar.current.startOfDay(for: newExp)
+    static func edit(_ transaction: Transaction, newQty: Double, newExp: Date?, store: CatalogWriting) throws {
+        let normalizedNewExp = newExp.map { Calendar.current.startOfDay(for: $0) }
         var updated = transaction
         updated.qty = newQty
         updated.exp = normalizedNewExp
@@ -104,8 +104,10 @@ enum StockService {
     /// Pure feasibility check for `applyAdjustment` — no write, so callers can validate a whole
     /// batch of adjustments up front before committing to any of them.
     static func canApplyAdjustment(itemId: String, delta: Double, transactions: [Transaction]) -> Bool {
-        let exp = CatalogDerivation.sortedLots(itemId: itemId, transactions: transactions).first?.exp
-            ?? Calendar.current.startOfDay(for: .now)
+        // Falls under whatever the item's earliest existing lot uses (dated or not); with no
+        // existing lot at all there's no date to infer, so the adjustment starts a no-expiration
+        // lot rather than inventing a date the user never gave.
+        let exp = CatalogDerivation.sortedLots(itemId: itemId, transactions: transactions).first.flatMap { $0.exp }
         var hypothetical = transactions
         hypothetical.append(Transaction(itemId: itemId, action: .adjust, qty: delta, exp: exp))
         return CatalogDerivation.rawLotTotals(itemId: itemId, transactions: hypothetical).values.allSatisfy { $0 >= -0.0001 }
@@ -116,8 +118,7 @@ enum StockService {
     @MainActor
     @discardableResult
     static func applyAdjustment(itemId: String, delta: Double, reason: AdjustReason, store: CatalogWriting) throws -> Transaction {
-        let exp = CatalogDerivation.sortedLots(itemId: itemId, transactions: store.transactions).first?.exp
-            ?? Calendar.current.startOfDay(for: .now)
+        let exp = CatalogDerivation.sortedLots(itemId: itemId, transactions: store.transactions).first.flatMap { $0.exp }
         let transaction = Transaction(itemId: itemId, action: .adjust, qty: delta, exp: exp, reasonTag: reason.rawValue)
         try store.addTransaction(transaction)
         return transaction

@@ -126,7 +126,7 @@ struct RecentCheckInRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item?.name ?? "Deleted item")
                     .font(LarderFont.rowTitle())
-                Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) · \(transaction.occurredAt.formatted(date: .omitted, time: .shortened)) · best before \(transaction.exp.formatted(.iso8601.year().month().day()))")
+                Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) · \(transaction.occurredAt.formatted(date: .omitted, time: .shortened)) · best before \(transaction.exp.formattedExpirationDate)")
                     .font(LarderFont.rowSubtitle())
                     .foregroundStyle(Color.larderSecondaryText)
             }

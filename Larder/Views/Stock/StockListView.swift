@@ -222,11 +222,16 @@ struct StockRow: View {
                     .font(LarderFont.rowSubtitle())
                     .foregroundStyle(Color.larderSecondaryText)
                 HStack(spacing: 8) {
-                    if let earliest = lots.map(\.exp).min() {
+                    if let earliest = lots.compactMap(\.exp).min() {
                         ExpiryBadge(date: earliest)
                     }
                     if lots.count > 1 {
                         OutlineTag(text: "\(lots.count) batches")
+                    }
+                    // At a glance, "is one of these open" -- the detailed sealed/opened
+                    // breakdown per batch lives on Item Detail, per `Item.packageOpenStatus`.
+                    if lots.contains(where: { (item.packageOpenStatus(for: $0.qty)?.openedAmount ?? 0) > 0 }) {
+                        OutlineTag(text: "Opened")
                     }
                 }
             }

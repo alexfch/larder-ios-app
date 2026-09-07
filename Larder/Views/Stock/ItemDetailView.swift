@@ -54,10 +54,14 @@ struct ItemDetailView: View {
             HStack(spacing: 0) {
                 statBlock(value: item.formattedQuantity(sortedLots.reduce(0) { $0 + $1.qty }), label: "On Hand")
                 Divider().frame(height: 60).overlay(Color.larderDivider)
-                if let earliest = sortedLots.map(\.exp).min() {
+                if let earliest = sortedLots.compactMap(\.exp).min() {
                     statBlock(value: "\(earliest.formatted(.iso8601.year().month().day())) (\(earliest.relativeDayLabel))", label: "Earliest Best Before")
-                } else {
+                } else if sortedLots.isEmpty {
                     statBlock(value: "—", label: "Earliest Best Before")
+                } else {
+                    // Stock exists, but every lot on the shelf has a nil `exp` -- an
+                    // `Item.noExpirationDate == true` product, distinct from having no stock.
+                    statBlock(value: "No expiration date", label: "Earliest Best Before")
                 }
             }
             .padding(.horizontal, 20)
@@ -74,12 +78,20 @@ struct ItemDetailView: View {
                     } else {
                         ForEach(sortedLots) { lot in
                             HStack {
-                                Text(item.formattedQuantity(lot.qty))
+                                // Falls back to the plain formatted quantity whenever there's no
+                                // open package to call out -- every package in this lot is still
+                                // sealed, or the item doesn't support partial checkout at all.
+                                Text(item.packageOpenStatusText(for: lot.qty) ?? item.formattedQuantity(lot.qty))
                                     .font(LarderFont.rowTitle())
                                 Spacer()
-                                Text(lot.exp.formatted(.iso8601.year().month().day()))
-                                Text(lot.exp.relativeDayLabel)
-                                    .foregroundStyle(Color.larderSecondaryText)
+                                if let exp = lot.exp {
+                                    Text(exp.formatted(.iso8601.year().month().day()))
+                                    Text(exp.relativeDayLabel)
+                                        .foregroundStyle(Color.larderSecondaryText)
+                                } else {
+                                    Text("no expiration date")
+                                        .foregroundStyle(Color.larderSecondaryText)
+                                }
                             }
                             .font(.system(size: 15))
                         }
@@ -177,7 +189,7 @@ struct HistoryRow: View {
                 Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) · \(transaction.occurredAt.formatted(date: .omitted, time: .shortened))")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.larderSecondaryText)
-                Text("best before \(transaction.exp.formatted(.iso8601.year().month().day()))")
+                Text("best before \(transaction.exp.formattedExpirationDate)")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.larderSecondaryText)
             }

@@ -17,11 +17,13 @@ enum CatalogDerivation {
 
     /// Every `(exp date, running total)` pair for one item, including non-positive totals — used
     /// for feasibility checks (a lot's balance must never go negative), unlike `lots(...)` below
-    /// which only returns what's actually still on the shelf.
-    static func rawLotTotals(itemId: String, transactions: [Transaction]) -> [Date: Double] {
-        var totals: [Date: Double] = [:]
+    /// which only returns what's actually still on the shelf. The `nil` key groups every
+    /// transaction with no `exp` (a no-expiration item's check-ins) into one no-expiration lot,
+    /// same as any other grouping key.
+    static func rawLotTotals(itemId: String, transactions: [Transaction]) -> [Date?: Double] {
+        var totals: [Date?: Double] = [:]
         for transaction in transactions where transaction.itemId == itemId {
-            let day = Calendar.current.startOfDay(for: transaction.exp)
+            let day = transaction.exp.map { Calendar.current.startOfDay(for: $0) }
             totals[day, default: 0] += signedEffect(transaction)
         }
         return totals
@@ -35,16 +37,28 @@ enum CatalogDerivation {
             .map { Lot(itemId: itemId, qty: $0.value, exp: $0.key) }
     }
 
+    /// Dated lots first (earliest first), any no-expiration lot last — there's no natural
+    /// chronological position for "never expires" among dated batches, and pushing it to the end
+    /// matches FIFO intuition: use up what has a clock ticking on it before what doesn't.
     static func sortedLots(itemId: String, transactions: [Transaction]) -> [Lot] {
-        lots(itemId: itemId, transactions: transactions).sorted { $0.exp < $1.exp }
+        lots(itemId: itemId, transactions: transactions).sorted { lhs, rhs in
+            switch (lhs.exp, rhs.exp) {
+            case let (lhsExp?, rhsExp?): return lhsExp < rhsExp
+            case (nil, nil): return false
+            case (nil, _?): return false
+            case (_?, nil): return true
+            }
+        }
     }
 
     static func onHandTotal(itemId: String, transactions: [Transaction]) -> Double {
         lots(itemId: itemId, transactions: transactions).reduce(0) { $0 + $1.qty }
     }
 
+    /// nil when there's no stock at all *or* every lot on the shelf has no expiration date --
+    /// both cases mean there's no best-before date to surface.
     static func earliestBestBefore(itemId: String, transactions: [Transaction]) -> Date? {
-        lots(itemId: itemId, transactions: transactions).map(\.exp).min()
+        lots(itemId: itemId, transactions: transactions).compactMap(\.exp).min()
     }
 
     static func sortedTransactions(itemId: String, transactions: [Transaction]) -> [Transaction] {
@@ -66,10 +80,10 @@ enum CatalogDerivation {
     /// ~5 seconds for a 5,000-item catalog. This is O(transactions) to build the grouping, then
     /// O(items) to summarize it.
     static func lotsByItem(transactions: [Transaction]) -> [String: ItemLotSummary] {
-        var totalsByItem: [String: [Date: Double]] = [:]
+        var totalsByItem: [String: [Date?: Double]] = [:]
         for transaction in transactions {
-            totalsByItem[transaction.itemId, default: [:]][Calendar.current.startOfDay(for: transaction.exp), default: 0]
-                += signedEffect(transaction)
+            let day = transaction.exp.map { Calendar.current.startOfDay(for: $0) }
+            totalsByItem[transaction.itemId, default: [:]][day, default: 0] += signedEffect(transaction)
         }
 
         var summaries: [String: ItemLotSummary] = [:]
@@ -80,8 +94,10 @@ enum CatalogDerivation {
             var isExpiringSoon = false
             for (exp, qty) in totals where qty > 0.0001 {
                 onHandTotal += qty
-                if earliest == nil || exp < earliest! { earliest = exp }
-                if exp.daysFromToday <= 14 { isExpiringSoon = true }
+                if let exp {
+                    if earliest == nil || exp < earliest! { earliest = exp }
+                    if exp.daysFromToday <= 14 { isExpiringSoon = true }
+                }
             }
             summaries[itemId] = ItemLotSummary(onHandTotal: onHandTotal, earliestBestBefore: earliest, isExpiringSoon: isExpiringSoon)
         }
