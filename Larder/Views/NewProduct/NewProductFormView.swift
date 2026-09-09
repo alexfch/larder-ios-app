@@ -321,18 +321,18 @@ struct NewProductFormView: View {
             case .count:
                 item = Item(
                     id: itemId,
-                    name: name,
+                    name: name.trimmingCharacters(in: .whitespaces),
                     barcode: normalizedBarcode,
                     packaging: .nonPackaged,
                     measurementStyle: .count,
-                    countUnitName: noun.isEmpty ? nil : noun,
+                    countUnitName: noun.isEmpty ? nil : noun.trimmingCharacters(in: .whitespaces),
                     noExpirationDate: noExpirationDate,
                     photoStorageRef: photoStorageRef
                 )
             case .bulk:
                 item = Item(
                     id: itemId,
-                    name: name,
+                    name: name.trimmingCharacters(in: .whitespaces),
                     barcode: normalizedBarcode,
                     packaging: .nonPackaged,
                     measurementStyle: .bulk,
