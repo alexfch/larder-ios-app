@@ -175,6 +175,11 @@ struct CheckInHubView: View {
             .padding(.bottom, 14)
         }
         .background(Color.larderBackground.ignoresSafeArea())
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        )
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .quantity(let item):

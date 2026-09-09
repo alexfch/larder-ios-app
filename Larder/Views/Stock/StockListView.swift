@@ -169,6 +169,11 @@ struct StockListView: View {
             }
         }
         .background(Color.larderBackground.ignoresSafeArea())
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        )
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .itemDetail(let item):
