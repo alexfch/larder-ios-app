@@ -110,6 +110,15 @@ struct Item: Identifiable, Codable, Hashable {
         return String(letters).uppercased()
     }
 
+    /// A stable index in `0..<4` for picking one of the design system's four rotating monogram
+    /// tile tones (`larderMono1`...`larderMono4`) -- derived from `id` rather than stored, so
+    /// every device shows the same tone for a given item without a field to sync. Kept as a plain
+    /// `Int` here (not a `Color`) since `Models` doesn't import SwiftUI; the view layer maps this
+    /// to a tone.
+    var monogramToneIndex: Int {
+        abs(id.hashValue) % 4
+    }
+
     /// Whether this item's quantity is tracked as whole counted units (packages, or individually
     /// counted loose items like eggs) rather than continuous weight/volume. Drives things like
     /// the +/- step size and whether the quantity field accepts decimals. Always true for

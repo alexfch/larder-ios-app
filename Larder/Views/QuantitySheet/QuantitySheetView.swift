@@ -65,35 +65,57 @@ struct QuantitySheetView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(mode == .checkIn ? "Check In" : "Check Out")
-                    .trackedUppercase()
-                    .font(LarderFont.eyebrow())
-                    .foregroundStyle(Color.larderSecondaryText)
-                Text(item.name)
-                    .font(LarderFont.screenTitle())
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(mode == .checkIn ? "Check in" : "Check out")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.larderAccent)
+                    Text(item.name)
+                        .font(.system(size: 24, weight: .heavy))
+                        .foregroundStyle(Color.larderInk)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.larderInk)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 10)
 
             Divider().overlay(Color.larderDivider)
 
             VStack(alignment: .leading, spacing: 24) {
                 if mode == .checkOut, sortedLots.count > 1 {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Batch")
-                            .trackedUppercase()
-                            .font(LarderFont.eyebrow())
+                        Text("Draw from batch")
+                            .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Color.larderSecondaryText)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(sortedLots) { lot in
-                                    BatchChip(
-                                        label: "\(item.formattedQuantity(lot.qty)) · \(lot.exp.formattedExpirationDate)",
-                                        isSelected: (selectedLot ?? sortedLots.first)?.exp == lot.exp
-                                    ) {
+                                    let isSelected = (selectedLot ?? sortedLots.first)?.exp == lot.exp
+                                    Button {
                                         selectedLot = lot
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(item.formattedQuantity(lot.qty))
+                                                .font(.system(size: 13, weight: .bold))
+                                            Text(lot.exp.formattedExpirationDate)
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .opacity(0.75)
+                                        }
+                                        .foregroundStyle(isSelected ? Color.larderOnAccent : Color.larderInk)
+                                        .padding(.horizontal, 13)
+                                        .padding(.vertical, 10)
+                                        .background(isSelected ? Color.larderAccent : Color.larderAccentSoft)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
                                     }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -104,9 +126,8 @@ struct QuantitySheetView: View {
                 // -- `confirm()` passes `nil` for `exp` in that case rather than reading `expDate`.
                 if mode == .checkIn, !item.noExpirationDate {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Best Before")
-                            .trackedUppercase()
-                            .font(LarderFont.eyebrow())
+                        Text("Best before")
+                            .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Color.larderSecondaryText)
                         DatePicker("", selection: $expDate, displayedComponents: .date)
                             .datePickerStyle(.wheel)
@@ -116,18 +137,18 @@ struct QuantitySheetView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Quantity")
-                        .trackedUppercase()
-                        .font(LarderFont.eyebrow())
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Color.larderSecondaryText)
-                    HStack {
+                    HStack(spacing: 0) {
                         Button {
                             quantity = max(stepSize, quantity - stepSize)
                         } label: {
                             Image(systemName: "minus")
-                                .frame(width: 44, height: 44)
-                                .overlay(Rectangle().strokeBorder(Color.larderInk, lineWidth: 1))
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 62, height: 56)
                         }
-                        HStack(spacing: 6) {
+                        .overlay(alignment: .trailing) { Rectangle().fill(Color.larderInk).frame(width: 2) }
+                        HStack(alignment: .lastTextBaseline, spacing: 8) {
                             // Bound to the raw stored quantity (base unit -- grams/mL, not the
                             // kg/L rollup `formattedQuantity` shows elsewhere) so a typed number
                             // always means exactly what it says. Cursor-to-end-on-focus behavior
@@ -135,11 +156,11 @@ struct QuantitySheetView: View {
                             TrailingCursorNumberField(
                                 value: $quantity,
                                 allowsDecimal: !quantityIsPackageCount,
-                                font: .systemFont(ofSize: 20, weight: .bold)
+                                font: .boldSystemFont(ofSize: 34)
                             )
-                            .frame(width: 70)
+                            .frame(width: 90)
                             Text(quantityUnitLabel)
-                                .font(LarderFont.quantityUnit())
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.larderSecondaryText)
                         }
                         .frame(maxWidth: .infinity)
@@ -147,11 +168,14 @@ struct QuantitySheetView: View {
                             quantity += stepSize
                         } label: {
                             Image(systemName: "plus")
-                                .frame(width: 44, height: 44)
-                                .overlay(Rectangle().strokeBorder(Color.larderInk, lineWidth: 1))
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 62, height: 56)
                         }
+                        .overlay(alignment: .leading) { Rectangle().fill(Color.larderInk).frame(width: 2) }
                     }
                     .foregroundStyle(Color.larderInk)
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.larderEdge, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     // Live "≈" readout, derived from whichever direction `quantity` is currently
                     // in: checking out an `allowsPartialCheckout` item enters a bulk amount, so
@@ -161,12 +185,12 @@ struct QuantitySheetView: View {
                     // nil, and this shows nothing, wherever there's nothing to convert.
                     if !quantityIsPackageCount, let countText = item.packageCountEquivalentText(for: quantity) {
                         Text("≈ \(countText)")
-                            .font(LarderFont.quantityUnit())
+                            .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(Color.larderSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .center)
                     } else if let bulkTotal = item.packageBulkEquivalentText(for: quantity) {
                         Text("≈ \(bulkTotal)")
-                            .font(LarderFont.quantityUnit())
+                            .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(Color.larderSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
@@ -175,22 +199,21 @@ struct QuantitySheetView: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.larderAccent)
+                        .foregroundStyle(Color.larderWarn)
                 }
             }
-            .padding(20)
+            .padding(18)
 
             Spacer(minLength: 0)
 
-            VStack(spacing: 10) {
-                PrimaryButton(title: mode == .checkIn ? "Confirm Check In" : "Confirm Check Out") {
-                    confirm()
-                }
-                SecondaryButton(title: "Cancel") {
-                    dismiss()
-                }
+            InlineIconButton(
+                title: mode == .checkIn ? "Confirm check in" : "Confirm check out",
+                systemIcon: "checkmark"
+            ) {
+                confirm()
             }
-            .padding(20)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 24)
         }
         .background(Color.larderBackground.ignoresSafeArea())
         // `simultaneousGesture` (not `onTapGesture`) fires alongside every row's own tap

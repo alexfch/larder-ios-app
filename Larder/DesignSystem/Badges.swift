@@ -28,7 +28,7 @@ struct ExpiryBadge: View {
     var body: some View {
         Text("\(date.formatted(.iso8601.year().month().day())) · \(date.relativeDayLabel)")
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(isSoon ? Color.larderAccent : Color.larderSecondaryText)
+            .foregroundStyle(isSoon ? Color.larderWarn : Color.larderSecondaryText)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(isSoon ? Color.larderExpiryBadgeBackground : Color.clear)

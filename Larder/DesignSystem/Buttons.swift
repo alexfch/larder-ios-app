@@ -10,7 +10,7 @@ struct PrimaryButton: View {
             Text(title)
                 .trackedUppercase()
                 .font(LarderFont.buttonLabel())
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.larderOnAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
         }

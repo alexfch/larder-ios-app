@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// F1: opens by default; lists the 5 items nearest their earliest best-before date.
+/// F1: opens by default. Shows the 5 items nearest their earliest best-before date until the
+/// user types into the search field, at which point it switches to showing every in-stock match
+/// -- replacing the previous "Manual" button's detour through a separate `ManualPickListView`
+/// sheet with in-place filtering, per the redesign.
 struct CheckOutHubView: View {
     /// Single source of truth for "what's on screen right now," replacing what used to be four
     /// independent `@State` booleans/optionals each backing its own `.sheet()` modifier. Mutating
@@ -11,13 +14,13 @@ struct CheckOutHubView: View {
     private enum ActiveSheet: Identifiable {
         case quantity(Item)
         case scanner
-        case manualPick
+        case settings
 
         var id: String {
             switch self {
             case .quantity(let item): return "quantity-\(item.id)"
             case .scanner: return "scanner"
-            case .manualPick: return "manualPick"
+            case .settings: return "settings"
             }
         }
     }
@@ -26,39 +29,78 @@ struct CheckOutHubView: View {
     @Environment(ToastCenter.self) private var toastCenter
 
     @State private var activeSheet: ActiveSheet?
+    @State private var searchText = ""
 
-    private var shortlist: [Item] {
-        CatalogFiltering.checkOutShortlist(store.items, transactions: store.transactions)
+    private var trimmedSearch: String {
+        searchText.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    private var searchMatches: [Item]? {
+        guard !trimmedSearch.isEmpty else { return nil }
+        return CatalogFiltering.manualPickFilteredItems(store.items, transactions: store.transactions, mode: .checkOut)
+            .filter { $0.name.lowercased().contains(trimmedSearch) || ($0.barcode ?? "").contains(trimmedSearch) }
+            .sorted { $0.name < $1.name }
+    }
+
+    private var displayedItems: [Item] {
+        searchMatches ?? CatalogFiltering.checkOutShortlist(store.items, transactions: store.transactions)
+    }
+
+    private var listLabel: String {
+        guard let searchMatches else { return "Use first · oldest batch" }
+        return "\(searchMatches.count) \(searchMatches.count == 1 ? "match" : "matches")"
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScreenHeader(
-                eyebrow: store.joinCode.map { "Household \($0)" } ?? "",
-                title: "Check Out",
-                subtitle: ""
-            )
+            LarderTopBar { activeSheet = .settings }
+
+            Text("Check out")
+                .font(.system(size: 28, weight: .heavy))
+                .foregroundStyle(Color.larderInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+            Divider().overlay(Color.larderDivider)
+
+            HStack {
+                Text(listLabel)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.larderInk)
+                Spacer()
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(Color.larderSoft)
 
             Divider().overlay(Color.larderDivider)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    Text("Use these first — earliest best before")
-                        .font(LarderFont.eyebrow())
-                        .foregroundStyle(Color.larderSecondaryText)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
-
-                    if shortlist.isEmpty {
-                        Text("Nothing due out yet. Check something in first.")
-                            .foregroundStyle(Color.larderSecondaryText)
-                            .padding(20)
+                    if displayedItems.isEmpty {
+                        if searchMatches != nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Nothing on hand matches \u{201C}\(searchText)\u{201D}.")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(Color.larderInk)
+                                Text("Check the spelling, or scan the barcode instead.")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Color.larderSecondaryText)
+                            }
+                            .padding(18)
+                        } else {
+                            Text("Nothing due out yet. Check something in first.")
+                                .foregroundStyle(Color.larderSecondaryText)
+                                .padding(20)
+                        }
                     } else {
-                        ForEach(shortlist) { item in
+                        ForEach(displayedItems) { item in
                             Button {
                                 activeSheet = .quantity(item)
                             } label: {
-                                HubRow(item: item, transactions: store.transactions)
+                                CheckOutRow(item: item, transactions: store.transactions)
                             }
                             .buttonStyle(.plain)
                             Divider().overlay(Color.larderDivider)
@@ -68,10 +110,14 @@ struct CheckOutHubView: View {
             }
 
             VStack(spacing: 10) {
-                PrimaryButton(title: "Scan") { activeSheet = .scanner }
-                SecondaryButton(title: "Manual") { activeSheet = .manualPick }
+                InlineSearchField(text: $searchText, placeholder: "Find a product to check out")
+                InlineIconButton(title: "Scan a barcode", systemIcon: "barcode.viewfinder") {
+                    activeSheet = .scanner
+                }
             }
-            .padding(20)
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 14)
         }
         .background(Color.larderBackground.ignoresSafeArea())
         .sheet(item: $activeSheet) { sheet in
@@ -82,10 +128,6 @@ struct CheckOutHubView: View {
                     mode: .checkOut,
                     preselectedLot: CatalogDerivation.sortedLots(itemId: item.id, transactions: store.transactions).first
                 )
-            case .manualPick:
-                ManualPickListView(mode: .checkOut) { item in
-                    activeSheet = .quantity(item)
-                }
             case .scanner:
                 BarcodeScannerView { code in
                     if let match = store.item(matchingBarcode: code) {
@@ -98,6 +140,15 @@ struct CheckOutHubView: View {
                         activeSheet = nil
                         toastCenter.show("No item on file for that barcode — check it in first.")
                     }
+                }
+            case .settings:
+                NavigationStack {
+                    SettingsView()
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { activeSheet = nil }
+                            }
+                        }
                 }
             }
         }

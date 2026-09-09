@@ -25,6 +25,10 @@ struct ItemThumbnail: View {
     var photoStorageRef: String? = nil
     let monogram: String
     var size: CGFloat = 56
+    /// Which `larderMono*` tile tone to fall back to when there's no photo -- defaults to the
+    /// single tone every thumbnail used before the redesign's four-tone rotation. Callers that
+    /// want that rotation (e.g. `CheckOutRow`) pass a per-item tone computed from the item's id.
+    var monogramBackground: Color = .larderMono1
 
     @State private var remoteImage: UIImage?
 
@@ -47,10 +51,10 @@ struct ItemThumbnail: View {
                     .scaledToFill()
             } else {
                 ZStack {
-                    Color.larderMonogramDark
+                    monogramBackground
                     Text(monogram)
                         .font(.system(size: size * 0.32, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.larderMonoForeground)
                 }
             }
         }

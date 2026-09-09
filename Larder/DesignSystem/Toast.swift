@@ -24,10 +24,10 @@ struct ToastOverlay: View {
             if let message {
                 Text(message)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.larderToastForeground)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(Color.larderInk)
+                    .background(Color.larderToastBackground)
                     .padding(.bottom, 90)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }

@@ -25,6 +25,10 @@ struct ItemDetailView: View {
     }
 
     let item: Item
+    /// The screen this detail view was opened from, shown next to the back chevron -- the design
+    /// tracks this as in-app navigation state; here it's just the caller's name, since every
+    /// entry point presents this as a sheet.
+    var backLabel: String = "Stock"
 
     @State private var activeSheet: ActiveSheet?
 
@@ -36,75 +40,142 @@ struct ItemDetailView: View {
         CatalogDerivation.sortedTransactions(itemId: item.id, transactions: store.transactions)
     }
 
+    private var onHandTotal: Double {
+        sortedLots.reduce(0) { $0 + $1.qty }
+    }
+
+    private var earliest: Date? {
+        sortedLots.compactMap(\.exp).min()
+    }
+
+    private var isUrgent: Bool {
+        earliest.map { $0.daysFromToday <= 14 } ?? false
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name)
-                        .font(LarderFont.screenTitle())
-                    Text("\(item.barcode ?? "no barcode") · counted in \(item.quantityUnitSuffix(for: 1))")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.larderSecondaryText)
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    dismiss()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .bold))
+                        Text(backLabel)
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                    .foregroundStyle(Color.larderSecondaryText)
                 }
-                Spacer()
-                ItemThumbnail(photoData: nil, photoStorageRef: item.photoStorageRef, monogram: item.monogram, size: 72)
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(item.name)
+                            .font(.system(size: 27, weight: .heavy))
+                            .foregroundStyle(Color.larderInk)
+                        Text("\(item.barcode ?? "no barcode") · counted in \(item.quantityUnitSuffix(for: 1))")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Color.larderSecondaryText)
+                    }
+                    Spacer(minLength: 8)
+                    ItemThumbnail(
+                        photoData: nil,
+                        photoStorageRef: item.photoStorageRef,
+                        monogram: item.monogram,
+                        size: 58,
+                        monogramBackground: Color.larderMonoTones[item.monogramToneIndex]
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
             }
-            .padding(20)
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
 
             HStack(spacing: 0) {
-                statBlock(value: item.formattedQuantity(sortedLots.reduce(0) { $0 + $1.qty }), label: "On Hand")
-                Divider().frame(height: 60).overlay(Color.larderDivider)
-                if let earliest = sortedLots.compactMap(\.exp).min() {
-                    statBlock(value: "\(earliest.formatted(.iso8601.year().month().day())) (\(earliest.relativeDayLabel))", label: "Earliest Best Before")
-                } else if sortedLots.isEmpty {
-                    statBlock(value: "—", label: "Earliest Best Before")
-                } else {
-                    // Stock exists, but every lot on the shelf has a nil `exp` -- an
-                    // `Item.noExpirationDate == true` product, distinct from having no stock.
-                    statBlock(value: "No expiration date", label: "Earliest Best Before")
-                }
+                statBlock(value: item.formattedQuantity(onHandTotal), label: "On hand")
+                Divider().frame(height: 44).overlay(Color.larderDivider)
+                statBlock(
+                    value: earliestBestBeforeText,
+                    label: "Earliest best before",
+                    valueColor: isUrgent ? Color.larderWarn : Color.larderInk
+                )
+                .padding(.leading, 14)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-
-            Divider().overlay(Color.larderDivider)
+            .padding(.horizontal, 18)
+            .overlay(alignment: .top) { Rectangle().fill(Color.larderDivider).frame(height: 1) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.larderDivider).frame(height: 1) }
 
             List {
                 Section {
                     if sortedLots.isEmpty {
-                        Text("Nothing on the shelf. Check some in.")
-                            .foregroundStyle(Color.larderSecondaryText)
-                            .listRowSeparator(.hidden)
-                    } else {
-                        ForEach(sortedLots) { lot in
-                            HStack {
-                                // Falls back to the plain formatted quantity whenever there's no
-                                // open package to call out -- every package in this lot is still
-                                // sealed, or the item doesn't support partial checkout at all.
-                                Text(item.packageOpenStatusText(for: lot.qty) ?? item.formattedQuantity(lot.qty))
-                                    .font(LarderFont.rowTitle())
-                                Spacer()
-                                if let exp = lot.exp {
-                                    Text(exp.formatted(.iso8601.year().month().day()))
-                                    Text(exp.relativeDayLabel)
-                                        .foregroundStyle(Color.larderSecondaryText)
-                                } else {
-                                    Text("no expiration date")
-                                        .foregroundStyle(Color.larderSecondaryText)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Nothing on the shelf.")
+                                .font(.system(size: 15, weight: .bold))
+                            Text("This product is in the catalog but has no stock. Check a batch in and it will appear here, oldest first.")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Color.larderInk2)
+                            Button {
+                                activeSheet = .checkIn
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text("Check some in")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Image(systemName: "arrow.down")
+                                        .font(.system(size: 13, weight: .semibold))
                                 }
+                                .foregroundStyle(Color.larderInk)
+                                .padding(.horizontal, 14)
+                                .frame(height: 44)
                             }
-                            .font(.system(size: 15))
+                            .overlay(Rectangle().strokeBorder(Color.larderEdge, lineWidth: 1))
+                        }
+                        .padding(16)
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.larderEdge, style: StrokeStyle(lineWidth: 1, dash: [4])))
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets())
+                    } else {
+                        ForEach(Array(sortedLots.enumerated()), id: \.element.id) { index, lot in
+                            lotRow(lot, index: index)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                         }
                     }
                 } header: {
-                    Text("Batches on the shelf")
+                    HStack {
+                        Text("Batches on the shelf")
+                        Spacer()
+                        Text(sortedLots.isEmpty ? "Empty" : "Draw from top")
+                            .foregroundStyle(Color.larderSecondaryText)
+                    }
                 }
 
                 Section {
                     if sortedTransactions.isEmpty {
-                        Text("No movements yet.")
-                            .foregroundStyle(Color.larderSecondaryText)
-                            .listRowSeparator(.hidden)
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("No movements yet.")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Every check-in and check-out lands here as a dated line you can correct later.")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Color.larderInk2)
+                            VStack(alignment: .leading, spacing: 9) {
+                                Text("How this product is tracked")
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .foregroundStyle(Color.larderSecondaryText)
+                                ForEach(trackingFacts, id: \.key) { fact in
+                                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                        Text(fact.key)
+                                            .font(.system(size: 11.5, weight: .semibold))
+                                            .foregroundStyle(Color.larderSecondaryText)
+                                            .frame(width: 96, alignment: .leading)
+                                        Text(fact.value)
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                }
+                            }
+                            .padding(.top, 14)
+                            .overlay(alignment: .top) { Rectangle().fill(Color.larderDivider).frame(height: 1) }
+                        }
+                        .listRowSeparator(.hidden)
                     } else {
                         ForEach(sortedTransactions) { transaction in
                             HistoryRow(transaction: transaction, item: item)
@@ -125,21 +196,26 @@ struct ItemDetailView: View {
                     }
                 } header: {
                     HStack {
-                        Text("History")
+                        Text("Movement history")
                         Spacer()
-                        Text("swipe a row left")
-                            .font(.system(size: 12))
+                        Text(sortedTransactions.isEmpty ? "Nothing logged" : "Tap to correct")
                             .foregroundStyle(Color.larderSecondaryText)
                     }
                 }
             }
             .listStyle(.plain)
             .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 10) {
-                    PrimaryButton(title: "Check Out") { activeSheet = .checkOut }
-                    SecondaryButton(title: "Check In") { activeSheet = .checkIn }
+                HStack(spacing: 8) {
+                    InlineIconButton(title: "Check out", systemIcon: "arrow.up") {
+                        activeSheet = .checkOut
+                    }
+                    InlineIconButton(title: "Check in", systemIcon: "arrow.down", isOutlined: true) {
+                        activeSheet = .checkIn
+                    }
                 }
-                .padding(20)
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 14)
                 .background(Color.larderBackground)
             }
         }
@@ -157,16 +233,70 @@ struct ItemDetailView: View {
         }
     }
 
-    private func statBlock(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var earliestBestBeforeText: String {
+        if let earliest {
+            return "\(earliest.formatted(.iso8601.year().month().day())) (\(earliest.relativeDayLabel))"
+        }
+        return sortedLots.isEmpty ? "—" : "No expiration date"
+    }
+
+    private var trackingFacts: [(key: String, value: String)] {
+        [
+            ("Counted as", item.isCountedInWholeUnits ? "Whole units · \(item.quantityUnitSuffix(for: 1))" : "Weight / volume in \(item.quantityUnitSuffix(for: 0))"),
+            ("Barcode", item.barcode ?? "None on file"),
+            ("Expiry", item.noExpirationDate ? "No expiration date tracked" : "Dated per batch on check-in"),
+        ]
+    }
+
+    private func statBlock(value: String, label: String, valueColor: Color = .larderInk) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             Text(value)
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 24, weight: .heavy))
+                .foregroundStyle(valueColor)
             Text(label)
-                .trackedUppercase()
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.larderSecondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+    }
+
+    private func lotRow(_ lot: Lot, index: Int) -> some View {
+        let urgent = (lot.exp?.daysFromToday ?? .max) <= 14
+        let barColor = urgent ? Color.larderWarn : (index == 0 ? Color.larderAccent : Color.larderEdge)
+        return HStack(spacing: 0) {
+            Rectangle().fill(barColor).frame(width: 3).frame(maxHeight: .infinity)
+            VStack {
+                Text(String(format: "%02d", index + 1))
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(barColor)
+            }
+            .frame(width: 44)
+            .frame(maxHeight: .infinity)
+            .overlay(alignment: .trailing) { Rectangle().fill(Color.larderDivider).frame(width: 1) }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.packageOpenStatusText(for: lot.qty) ?? item.formattedQuantity(lot.qty))
+                    .font(.system(size: 16, weight: .bold))
+                Text(lot.exp.formattedExpirationDate + (lot.exp.map { " · \($0.relativeDayLabel)" } ?? ""))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Color.larderSecondaryText)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Spacer(minLength: 0)
+
+            if index == 0 {
+                Text("Use first")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(barColor)
+                    .padding(.trailing, 12)
+            }
+        }
+        .background(index == 0 ? Color.larderSurface : Color.clear)
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.larderDivider, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func removeTransaction(_ transaction: Transaction) {
@@ -185,24 +315,29 @@ struct HistoryRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) · \(transaction.occurredAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.larderSecondaryText)
-                Text("best before \(transaction.exp.formattedExpirationDate)")
-                    .font(.system(size: 13))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(actionLabel)
+                    .trackedUppercase()
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.larderInk)
+                Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) \(transaction.occurredAt.formatted(date: .omitted, time: .shortened)) · bb \(transaction.exp.formattedExpirationDate)")
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.larderSecondaryText)
             }
             Spacer()
-            Text(transaction.action.rawValue)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color.larderSecondaryText)
             Text(signedQuantity)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(transaction.action == .checkOut ? Color.larderInk : Color.larderAccent)
-                .frame(minWidth: 60, alignment: .trailing)
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(transaction.action == .checkIn ? Color.larderAccent : Color.larderInk)
         }
         .padding(.vertical, 4)
+    }
+
+    private var actionLabel: String {
+        switch transaction.action {
+        case .checkIn: return "Checked in"
+        case .checkOut: return "Checked out"
+        case .adjust: return "Adjusted"
+        }
     }
 
     private var signedQuantity: String {
