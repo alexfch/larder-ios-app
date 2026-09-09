@@ -15,12 +15,12 @@ struct QuantitySheetView: View {
 
     let item: Item
     let mode: QuantitySheetMode
-
+    
     @State private var quantity: Double
     @State private var expDate: Date
     @State private var selectedLot: Lot?
     @State private var errorMessage: String?
-
+    
     init(item: Item, mode: QuantitySheetMode, preselectedLot: Lot? = nil) {
         self.item = item
         self.mode = mode
@@ -66,22 +66,10 @@ struct QuantitySheetView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(mode == .checkIn ? "Check in" : "Check out")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Color.larderAccent)
-                    Text(item.name)
-                        .font(.system(size: 24, weight: .heavy))
-                        .foregroundStyle(Color.larderInk)
-                }
+                Text(item.name)
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(Color.larderInk)
                 Spacer(minLength: 8)
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.larderInk)
-                }
             }
             .padding(.horizontal, 18)
             .padding(.top, 16)
@@ -125,13 +113,15 @@ struct QuantitySheetView: View {
                 // Skipped entirely for a product checked in with `Item.noExpirationDate == true`
                 // -- `confirm()` passes `nil` for `exp` in that case rather than reading `expDate`.
                 if mode == .checkIn, !item.noExpirationDate {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Text("Best before")
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Color.larderSecondaryText)
                         DatePicker("", selection: $expDate, displayedComponents: .date)
                             .datePickerStyle(.wheel)
                             .labelsHidden()
+                            .frame(height: 100)
+                            .clipped()
                     }
                 }
 
@@ -149,6 +139,7 @@ struct QuantitySheetView: View {
                         }
                         .overlay(alignment: .trailing) { Rectangle().fill(Color.larderInk).frame(width: 2) }
                         HStack(alignment: .lastTextBaseline, spacing: 8) {
+                            Spacer()
                             // Bound to the raw stored quantity (base unit -- grams/mL, not the
                             // kg/L rollup `formattedQuantity` shows elsewhere) so a typed number
                             // always means exactly what it says. Cursor-to-end-on-focus behavior
@@ -158,12 +149,13 @@ struct QuantitySheetView: View {
                                 allowsDecimal: !quantityIsPackageCount,
                                 font: .boldSystemFont(ofSize: 34)
                             )
-                            .frame(width: 90)
+                            .fixedSize(horizontal: true, vertical: false)
                             Text(quantityUnitLabel)
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.larderSecondaryText)
+                            Spacer()
                         }
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         Button {
                             quantity += stepSize
                         } label: {
@@ -173,6 +165,7 @@ struct QuantitySheetView: View {
                         }
                         .overlay(alignment: .leading) { Rectangle().fill(Color.larderInk).frame(width: 2) }
                     }
+                    .frame(maxHeight: 56)
                     .foregroundStyle(Color.larderInk)
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.larderEdge, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -226,6 +219,7 @@ struct QuantitySheetView: View {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
         )
+        .presentationDetents([.medium])
     }
 
     private func confirm() {
