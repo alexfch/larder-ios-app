@@ -48,6 +48,7 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         textField.placeholder = placeholder
         textField.font = font
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged), for: .editingChanged)
+        textField.addTarget(context.coordinator, action: #selector(Coordinator.textField), for: .editingChanged)
         return textField
     }
 
@@ -71,6 +72,27 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         init(_ parent: TrailingCursorNumberField) {
             self.parent = parent
         }
+        
+        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+                    let currentText = textField.text ?? ""
+                    guard let stringRange = Range(range, in: currentText) else { return false }
+                    let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
+
+                    if updatedText.isEmpty { return true }
+                        
+                    if updatedText.contains(".") {
+                        let components = updatedText.components(separatedBy: ".")
+                        guard components.count <= 2 else { return false }
+                        
+                        let integerPart = components[0]
+                        let fractionalPart = components[1]
+                        
+                        return integerPart.count <= 4 && fractionalPart.count <= 3
+                    }
+                    else {
+                        return updatedText.count <= 4
+                    }
+                }
 
         @objc func textChanged(_ textField: UITextField) {
             // A partial in-progress value (e.g. "3." while typing "3.5") won't parse yet —
