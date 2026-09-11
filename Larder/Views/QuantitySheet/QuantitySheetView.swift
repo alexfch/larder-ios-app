@@ -17,6 +17,7 @@ struct QuantitySheetView: View {
     let mode: QuantitySheetMode
     
     @State private var quantity: Double
+    @State private var maxQuantity: Double = 9999.999
     @State private var expDate: Date
     @State private var selectedLot: Lot?
     @State private var errorMessage: String?
@@ -157,7 +158,7 @@ struct QuantitySheetView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         Button {
-                            quantity += stepSize
+                            quantity = quantity + stepSize <= maxQuantity ? quantity + stepSize : quantity
                         } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 18, weight: .semibold))

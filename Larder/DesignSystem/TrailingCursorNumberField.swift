@@ -25,6 +25,7 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 3
+        formatter.maximumIntegerDigits = 4
         return formatter
     }()
 
@@ -33,6 +34,7 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 0
+        formatter.maximumIntegerDigits = 4
         return formatter
     }()
 
@@ -74,25 +76,30 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         }
         
         func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-                    let currentText = textField.text ?? ""
-                    guard let stringRange = Range(range, in: currentText) else { return false }
-                    let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
+            
+            let maxQuantity = 9999.999 as Double
+            
+            let currentText = textField.text ?? ""
+            
+            guard let stringRange = Range(range, in: currentText) else { return false }
+            let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
 
-                    if updatedText.isEmpty { return true }
-                        
-                    if updatedText.contains(".") {
-                        let components = updatedText.components(separatedBy: ".")
-                        guard components.count <= 2 else { return false }
-                        
-                        let integerPart = components[0]
-                        let fractionalPart = components[1]
-                        
-                        return integerPart.count <= 4 && fractionalPart.count <= 3
-                    }
-                    else {
-                        return updatedText.count <= 4
-                    }
-                }
+            if updatedText.isEmpty { return true }
+            
+            guard let doubleValue = Double(updatedText) else { return false }
+                
+            if doubleValue > maxQuantity { return false }
+            
+            if updatedText.contains(".") {
+                let components = updatedText.components(separatedBy: ".")
+                guard components.count <= 2 else { return false }
+                let fractionalPart = components[1]
+                return fractionalPart.count <= 3
+            }
+            else {
+                return true
+            }
+        }
 
         @objc func textChanged(_ textField: UITextField) {
             // A partial in-progress value (e.g. "3." while typing "3.5") won't parse yet —
