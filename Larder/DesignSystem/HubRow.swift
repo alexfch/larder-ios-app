@@ -53,9 +53,12 @@ struct HubRow: View {
                 Text(item.name)
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Color.larderInk)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
                 Text(metaText)
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(Color.larderSecondaryText)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)

@@ -61,9 +61,12 @@ struct CheckOutRow: View {
                         Text(item.name)
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(Color.larderInk)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
                         Text(earliest.map { "\($0.formatted(.iso8601.year().month().day())) · \($0.relativeDayLabel)" } ?? "no best-before date")
                             .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(isUrgent ? Color.larderWarn : Color.larderSecondaryText)
+                            .lineLimit(1)
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 3) {
