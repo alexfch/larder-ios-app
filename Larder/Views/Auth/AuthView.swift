@@ -41,7 +41,7 @@ struct AuthView: View {
                 Text(mode == .signUp
                      ? "Create an account, then set up or join your household."
                      : "Log in to your account.")
-                    .font(.system(size: 15))
+                    .font(.publicSans(size: 15))
                     .foregroundStyle(Color.larderSecondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -74,7 +74,7 @@ struct AuthView: View {
                     validationMessage = nil
                 } label: {
                     Text(mode == .signUp ? "Already have an account? Log in" : "New here? Create an account")
-                        .font(.system(size: 14))
+                        .font(.publicSans(size: 14))
                         .foregroundStyle(Color.larderAccent)
                 }
                 .disabled(isWorking)
@@ -86,8 +86,8 @@ struct AuthView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.larderAccent)
+                        .font(.publicSans(size: 13))
+                        .foregroundStyle(Color.larderWarn)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                 }

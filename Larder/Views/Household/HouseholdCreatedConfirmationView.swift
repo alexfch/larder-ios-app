@@ -13,7 +13,7 @@ struct HouseholdCreatedConfirmationView: View {
 
             VStack(spacing: 20) {
                 Text("To add another device later, open Larder there and enter this code:")
-                    .font(.system(size: 15))
+                    .font(.publicSans(size: 15))
                     .foregroundStyle(Color.larderSecondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -29,7 +29,7 @@ struct HouseholdCreatedConfirmationView: View {
                     .padding(.horizontal, 40)
 
                 Text("There's no place to look this up again yet, so make a note of it now.")
-                    .font(.system(size: 13))
+                    .font(.publicSans(size: 13))
                     .foregroundStyle(Color.larderSecondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)

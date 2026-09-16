@@ -2,31 +2,31 @@ import SwiftUI
 
 enum LarderFont {
     static func eyebrow() -> Font {
-        .system(size: 12, weight: .semibold, design: .default).uppercaseSmallCaps()
+        .publicSans(size: 12, weight: .semibold).uppercaseSmallCaps()
     }
 
     static func screenTitle() -> Font {
-        .system(size: 34, weight: .heavy, design: .default)
+        .publicSans(size: 34, weight: .heavy)
     }
 
     static func rowTitle() -> Font {
-        .system(size: 17, weight: .bold)
+        .publicSans(size: 17, weight: .bold)
     }
 
     static func rowSubtitle() -> Font {
-        .system(size: 14, weight: .regular)
+        .publicSans(size: 14, weight: .regular)
     }
 
     static func quantityValue() -> Font {
-        .system(size: 20, weight: .bold)
+        .publicSans(size: 20, weight: .bold)
     }
 
     static func quantityUnit() -> Font {
-        .system(size: 12, weight: .semibold)
+        .publicSans(size: 12, weight: .semibold)
     }
 
     static func buttonLabel() -> Font {
-        .system(size: 16, weight: .bold)
+        .publicSans(size: 16, weight: .bold)
     }
 }
 

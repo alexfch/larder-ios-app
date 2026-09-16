@@ -37,7 +37,7 @@ struct HouseholdSetupView: View {
                 switch mode {
                 case .choose:
                     Text("Create a new household, or join one that's already set up on another device.")
-                        .font(.system(size: 15))
+                        .font(.publicSans(size: 15))
                         .foregroundStyle(Color.larderSecondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -58,7 +58,7 @@ struct HouseholdSetupView: View {
 
                 case .join:
                     Text("Enter the code shown on the device that's already set up.")
-                        .font(.system(size: 15))
+                        .font(.publicSans(size: 15))
                         .foregroundStyle(Color.larderSecondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -92,8 +92,8 @@ struct HouseholdSetupView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.larderAccent)
+                        .font(.publicSans(size: 13))
+                        .foregroundStyle(Color.larderWarn)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                 }
@@ -118,7 +118,7 @@ struct HouseholdSetupView: View {
     private var accessibleHouseholdsList: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Or continue in a household you already belong to")
-                .font(.system(size: 13))
+                .font(.publicSans(size: 13))
                 .foregroundStyle(Color.larderSecondaryText)
                 .padding(.horizontal, 4)
 
@@ -129,7 +129,7 @@ struct HouseholdSetupView: View {
                     } label: {
                         HStack {
                             Text("Household \(household.joinCode)")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.publicSans(size: 15, weight: .semibold))
                                 .foregroundStyle(Color.larderInk)
                             Spacer()
                         }

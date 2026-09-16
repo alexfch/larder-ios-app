@@ -23,7 +23,7 @@ struct ToastOverlay: View {
             Spacer()
             if let message {
                 Text(message)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.publicSans(size: 14, weight: .semibold))
                     .foregroundStyle(Color.larderToastForeground)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)

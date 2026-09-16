@@ -41,7 +41,7 @@ struct ManualPickListView: View {
                         Image(systemName: "plus")
                         Text("Add new product")
                             .trackedUppercase()
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.publicSans(size: 13, weight: .bold))
                         Spacer()
                     }
                     .foregroundStyle(Color.larderAccent)

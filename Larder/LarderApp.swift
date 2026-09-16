@@ -23,6 +23,7 @@ struct LarderApp: App {
     /// Firebase.
     init() {
         FirebaseApp.configure()
+        PublicSansFontLoader.registerIfNeeded()
         _toastCenter = State(initialValue: ToastCenter())
         _authSession = State(initialValue: AuthSession())
         _householdSession = State(initialValue: HouseholdSession())

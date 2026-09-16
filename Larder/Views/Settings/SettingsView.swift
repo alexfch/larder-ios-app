@@ -51,7 +51,7 @@ struct SettingsView: View {
                             .font(LarderFont.eyebrow())
                             .foregroundStyle(Color.larderSecondaryText)
                         Text(email)
-                            .font(.system(size: 15))
+                            .font(.publicSans(size: 15))
                             .foregroundStyle(Color.larderInk)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -158,13 +158,13 @@ struct SettingsView: View {
     private func rosterRow(_ member: RosterMember, showsChevron: Bool) -> some View {
         HStack {
             Text(displayName(for: member))
-                .font(.system(size: 15))
+                .font(.publicSans(size: 15))
                 .foregroundStyle(Color.larderInk)
             Spacer()
             if let role = member.role {
                 Text(role == .admin ? "Admin" : "Member")
                     .trackedUppercase()
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.publicSans(size: 12, weight: .bold))
                     .foregroundStyle(Color.larderSecondaryText)
             }
             if showsChevron {

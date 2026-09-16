@@ -73,7 +73,7 @@ struct CountSessionView: View {
                     }
                     Spacer()
                     Text("\(countedLines.count)/\(lines.count)")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.publicSans(size: 22, weight: .bold))
                         .foregroundStyle(Color.larderAccent)
                 }
                 .padding(20)
@@ -98,14 +98,14 @@ struct CountSessionView: View {
                     get: { session.blindCount },
                     set: { newValue in setBlindCount(newValue) }
                 ))
-                .font(.system(size: 13))
+                .font(.publicSans(size: 13))
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
 
                 Text(session.mode == .checklist
                      ? "Tap a line to key in what is actually on the shelf. Untouched lines are left alone."
                      : "Scan a barcode to tick that line at book quantity. Scan again to correct it.")
-                    .font(.system(size: 13))
+                    .font(.publicSans(size: 13))
                     .foregroundStyle(Color.larderSecondaryText)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
@@ -140,7 +140,7 @@ struct CountSessionView: View {
 
                         HStack {
                             Text("\(countedLines.count) counted · \(differingLines.count) differing")
-                                .font(.system(size: 13))
+                                .font(.publicSans(size: 13))
                                 .foregroundStyle(Color.larderSecondaryText)
                             Spacer()
                             SecondaryButton(title: "Review", isEnabled: !countedLines.isEmpty) {
@@ -252,7 +252,7 @@ struct CountLineRow: View {
             Spacer()
             if let counted = line.countedQty, let item {
                 Text(item.formattedQuantity(counted))
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.publicSans(size: 15, weight: .bold))
             } else {
                 Text("—")
                     .foregroundStyle(Color.larderSecondaryText)

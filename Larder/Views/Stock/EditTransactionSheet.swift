@@ -47,7 +47,7 @@ struct EditTransactionSheet: View {
                 }
                 if let errorMessage {
                     Text(errorMessage)
-                        .foregroundStyle(Color.larderAccent)
+                        .foregroundStyle(Color.larderWarn)
                 }
             }
             .navigationTitle("Edit Movement")

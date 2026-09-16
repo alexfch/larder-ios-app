@@ -59,22 +59,22 @@ struct CheckOutRow: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(item.name)
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.publicSans(size: 17, weight: .bold))
                             .foregroundStyle(Color.larderInk)
                             .lineLimit(2)
                             .truncationMode(.tail)
                         Text(earliest.map { "\($0.formatted(.iso8601.year().month().day())) · \($0.relativeDayLabel)" } ?? "no best-before date")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.publicSans(size: 11.5, weight: .semibold))
                             .foregroundStyle(isUrgent ? Color.larderWarn : Color.larderSecondaryText)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(quantityParts.value)
-                            .font(.system(size: 22, weight: .heavy))
+                            .font(.publicSans(size: 22, weight: .heavy))
                             .foregroundStyle(Color.larderInk)
                         Text(quantityParts.unit)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.publicSans(size: 11, weight: .semibold))
                             .foregroundStyle(Color.larderSecondaryText)
                     }
                 }
@@ -114,7 +114,7 @@ struct CheckOutRow: View {
     private func tag(_ text: String, fg: Color, bg: Color) -> some View {
         Text(text)
             .trackedUppercase()
-            .font(.system(size: 11, weight: .bold))
+            .font(.publicSans(size: 11, weight: .bold))
             .foregroundStyle(fg)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)

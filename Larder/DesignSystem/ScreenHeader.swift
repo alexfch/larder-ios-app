@@ -32,7 +32,7 @@ struct ScreenHeader: View {
             }
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 15))
+                    .font(.publicSans(size: 15))
                     .foregroundStyle(Color.larderSecondaryText)
             }
         }

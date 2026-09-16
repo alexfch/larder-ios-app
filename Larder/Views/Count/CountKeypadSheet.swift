@@ -25,11 +25,11 @@ struct CountKeypadSheet: View {
                     .font(LarderFont.screenTitle())
                 if blindCount {
                     Text("expected hidden until review")
-                        .font(.system(size: 13))
+                        .font(.publicSans(size: 13))
                         .foregroundStyle(Color.larderSecondaryText)
                 } else if let item {
                     Text("book \(item.formattedQuantity(line.bookQtyAtStart))")
-                        .font(.system(size: 13))
+                        .font(.publicSans(size: 13))
                         .foregroundStyle(Color.larderSecondaryText)
                 }
             }
@@ -38,7 +38,7 @@ struct CountKeypadSheet: View {
             TextField("Actual count", text: $enteredText)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.center)
-                .font(.system(size: 40, weight: .bold))
+                .font(.publicSans(size: 40, weight: .bold))
                 .padding()
                 .overlay(Rectangle().strokeBorder(Color.larderDivider, lineWidth: 1))
                 .padding(.horizontal, 40)

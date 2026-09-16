@@ -72,7 +72,7 @@ struct CheckInHubView: View {
             LarderTopBar { activeSheet = .settings }
 
             Text("Check in")
-                .font(.system(size: 28, weight: .heavy))
+                .font(.publicSans(size: 28, weight: .heavy))
                 .foregroundStyle(Color.larderInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 18)
@@ -83,11 +83,11 @@ struct CheckInHubView: View {
 
             HStack {
                 Text(listLabel)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.publicSans(size: 11.5, weight: .medium))
                     .foregroundStyle(Color.larderInk)
                 Spacer()
                 Text(listHint)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.publicSans(size: 11.5, weight: .medium))
                     .foregroundStyle(Color.larderSecondaryText)
             }
             .padding(.horizontal, 18)
@@ -102,10 +102,10 @@ struct CheckInHubView: View {
                         if searchMatches.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("No product matches \u{201C}\(searchText)\u{201D}.")
-                                    .font(.system(size: 16, weight: .bold))
+                                    .font(.publicSans(size: 16, weight: .bold))
                                     .foregroundStyle(Color.larderInk)
                                 Text("Add it with New, or scan its barcode.")
-                                    .font(.system(size: 14))
+                                    .font(.publicSans(size: 14))
                                     .foregroundStyle(Color.larderSecondaryText)
                             }
                             .padding(18)
@@ -163,11 +163,10 @@ struct CheckInHubView: View {
                         activeSheet = .scanner
                     }
                     .frame(maxWidth: .infinity)
-                    .layoutPriority(2)
                     InlineIconButton(title: "New", systemIcon: "plus", isOutlined: true) {
                         activeSheet = .newProduct(barcode: nil, name: "")
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(width: 130)
                 }
             }
             .padding(.horizontal, 18)
@@ -223,10 +222,10 @@ private struct DeletedTransactionRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Deleted item")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.publicSans(size: 17, weight: .bold))
                     .foregroundStyle(Color.larderInk)
                 Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) · bb \(transaction.exp.formattedExpirationDate)")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.publicSans(size: 11.5, weight: .semibold))
                     .foregroundStyle(Color.larderSecondaryText)
             }
             Spacer()

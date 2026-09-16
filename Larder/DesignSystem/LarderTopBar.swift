@@ -12,7 +12,7 @@ struct LarderTopBar: View {
     var body: some View {
         HStack {
             Text("LARDER")
-                .font(.system(size: 13, weight: .bold))
+                .font(.publicSans(size: 13, weight: .bold))
                 .tracking(2.2)
                 .foregroundStyle(Color.larderOnAccent)
             Spacer()

@@ -62,8 +62,8 @@ struct NewProductFormView: View {
                         .onChange(of: name) { _, _ in nameError = false }
                     if nameError {
                         Text("Enter a name before saving.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.larderAccent)
+                            .font(.publicSans(size: 13))
+                            .foregroundStyle(Color.larderWarn)
                     }
 
                     TextField("Barcode (optional)", text: $barcode)
@@ -71,17 +71,17 @@ struct NewProductFormView: View {
                         .onChange(of: barcode) { _, _ in barcodeError = nil }
                     if let barcodeError {
                         Text(barcodeError)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.larderAccent)
+                            .font(.publicSans(size: 13))
+                            .foregroundStyle(Color.larderWarn)
                     }
                     switch lookupState {
                     case .loading:
                         Label("Looking up product…", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 13))
+                            .font(.publicSans(size: 13))
                             .foregroundStyle(Color.larderSecondaryText)
                     case .notFound:
                         Text("Nothing found on file for this barcode — enter the details below.")
-                            .font(.system(size: 13))
+                            .font(.publicSans(size: 13))
                             .foregroundStyle(Color.larderSecondaryText)
                     default:
                         EmptyView()

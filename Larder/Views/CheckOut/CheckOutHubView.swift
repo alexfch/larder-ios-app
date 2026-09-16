@@ -56,7 +56,7 @@ struct CheckOutHubView: View {
             LarderTopBar { activeSheet = .settings }
 
             Text("Check out")
-                .font(.system(size: 28, weight: .heavy))
+                .font(.publicSans(size: 28, weight: .heavy))
                 .foregroundStyle(Color.larderInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 18)
@@ -67,7 +67,7 @@ struct CheckOutHubView: View {
 
             HStack {
                 Text(listLabel)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.publicSans(size: 11.5, weight: .medium))
                     .foregroundStyle(Color.larderInk)
                 Spacer()
             }
@@ -83,10 +83,10 @@ struct CheckOutHubView: View {
                         if searchMatches != nil {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Nothing on hand matches \u{201C}\(searchText)\u{201D}.")
-                                    .font(.system(size: 16, weight: .bold))
+                                    .font(.publicSans(size: 16, weight: .bold))
                                     .foregroundStyle(Color.larderInk)
                                 Text("Check the spelling, or scan the barcode instead.")
-                                    .font(.system(size: 14))
+                                    .font(.publicSans(size: 14))
                                     .foregroundStyle(Color.larderSecondaryText)
                             }
                             .padding(18)

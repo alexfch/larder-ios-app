@@ -51,12 +51,12 @@ struct HubRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.name)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.publicSans(size: 17, weight: .bold))
                     .foregroundStyle(Color.larderInk)
                     .lineLimit(2)
                     .truncationMode(.tail)
                 Text(metaText)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.publicSans(size: 11.5, weight: .semibold))
                     .foregroundStyle(Color.larderSecondaryText)
                     .lineLimit(1)
             }
@@ -65,10 +65,10 @@ struct HubRow: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 Text(quantityParts.value)
-                    .font(.system(size: 22, weight: .heavy))
+                    .font(.publicSans(size: 22, weight: .heavy))
                     .foregroundStyle(isHighlighted ? Color.larderAccent : Color.larderInk)
                 Text(quantityParts.unit)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.publicSans(size: 11, weight: .semibold))
                     .foregroundStyle(Color.larderSecondaryText)
             }
         }

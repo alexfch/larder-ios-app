@@ -33,7 +33,7 @@ struct CountReviewView: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .foregroundStyle(Color.larderAccent)
+                            .foregroundStyle(Color.larderWarn)
                             .padding(.horizontal, 20)
                     }
 
@@ -56,7 +56,7 @@ struct CountReviewView: View {
                         VStack(spacing: 10) {
                             if let errorMessage {
                                 Text(errorMessage)
-                                    .foregroundStyle(Color.larderAccent)
+                                    .foregroundStyle(Color.larderWarn)
                                     .padding(.horizontal, 20)
                             }
                             PrimaryButton(title: "Apply") { apply() }
@@ -119,13 +119,13 @@ struct AdjustLineRow: View {
                         .font(LarderFont.rowTitle())
                     if let item {
                         Text("book \(item.formattedQuantity(line.bookQtyAtStart)) → counted \(item.formattedQuantity(line.countedQty ?? line.bookQtyAtStart))")
-                            .font(.system(size: 13))
+                            .font(.publicSans(size: 13))
                             .foregroundStyle(Color.larderSecondaryText)
                     }
                 }
                 Spacer()
                 Text(signedDelta)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.publicSans(size: 17, weight: .bold))
                     .foregroundStyle(line.delta >= 0 ? Color.larderAccent : Color.larderInk)
             }
 

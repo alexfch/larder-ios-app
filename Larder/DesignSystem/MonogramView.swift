@@ -53,7 +53,7 @@ struct ItemThumbnail: View {
                 ZStack {
                     monogramBackground
                     Text(monogram)
-                        .font(.system(size: size * 0.32, weight: .bold))
+                        .font(.publicSans(size: size * 0.32, weight: .bold))
                         .foregroundStyle(Color.larderMonoForeground)
                 }
             }

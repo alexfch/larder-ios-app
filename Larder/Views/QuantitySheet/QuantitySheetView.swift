@@ -68,7 +68,7 @@ struct QuantitySheetView: View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 Text(item.name)
-                    .font(.system(size: 24, weight: .heavy))
+                    .font(.publicSans(size: 24, weight: .heavy))
                     .foregroundStyle(Color.larderInk)
                 Spacer(minLength: 8)
             }
@@ -82,7 +82,7 @@ struct QuantitySheetView: View {
                 if mode == .checkOut, sortedLots.count > 1 {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Draw from batch")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.publicSans(size: 11.5, weight: .medium))
                             .foregroundStyle(Color.larderSecondaryText)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -93,9 +93,9 @@ struct QuantitySheetView: View {
                                     } label: {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(item.formattedQuantity(lot.qty))
-                                                .font(.system(size: 13, weight: .bold))
+                                                .font(.publicSans(size: 13, weight: .bold))
                                             Text(lot.exp.formattedExpirationDate)
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .font(.publicSans(size: 11, weight: .semibold))
                                                 .opacity(0.75)
                                         }
                                         .foregroundStyle(isSelected ? Color.larderOnAccent : Color.larderInk)
@@ -116,7 +116,7 @@ struct QuantitySheetView: View {
                 if mode == .checkIn, !item.noExpirationDate {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Best before")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.publicSans(size: 11.5, weight: .medium))
                             .foregroundStyle(Color.larderSecondaryText)
                         DatePicker("", selection: $expDate, displayedComponents: .date)
                             .datePickerStyle(.wheel)
@@ -128,7 +128,7 @@ struct QuantitySheetView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Quantity")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.publicSans(size: 11.5, weight: .medium))
                         .foregroundStyle(Color.larderSecondaryText)
                     HStack(spacing: 0) {
                         Button {
@@ -152,7 +152,7 @@ struct QuantitySheetView: View {
                             )
                             .fixedSize(horizontal: true, vertical: false)
                             Text(quantityUnitLabel)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.publicSans(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.larderSecondaryText)
                             Spacer()
                         }
@@ -179,12 +179,12 @@ struct QuantitySheetView: View {
                     // nil, and this shows nothing, wherever there's nothing to convert.
                     if !quantityIsPackageCount, let countText = item.packageCountEquivalentText(for: quantity) {
                         Text("≈ \(countText)")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.publicSans(size: 11.5, weight: .semibold))
                             .foregroundStyle(Color.larderSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .center)
                     } else if let bulkTotal = item.packageBulkEquivalentText(for: quantity) {
                         Text("≈ \(bulkTotal)")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.publicSans(size: 11.5, weight: .semibold))
                             .foregroundStyle(Color.larderSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
@@ -192,7 +192,7 @@ struct QuantitySheetView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.system(size: 13))
+                        .font(.publicSans(size: 13))
                         .foregroundStyle(Color.larderWarn)
                 }
             }

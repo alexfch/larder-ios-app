@@ -13,7 +13,7 @@ struct InlineSearchField: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color.larderSecondaryText)
             TextField(placeholder, text: $text)
-                .font(.system(size: 15, weight: .medium))
+                .font(.publicSans(size: 15, weight: .medium))
                 .foregroundStyle(Color.larderInk)
             if !text.isEmpty {
                 Button {
@@ -47,7 +47,7 @@ struct InlineIconButton: View {
         Button(action: action) {
             HStack {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.publicSans(size: 15, weight: .semibold))
                 Spacer()
                 Image(systemName: systemIcon)
                     .font(.system(size: 16, weight: .medium))

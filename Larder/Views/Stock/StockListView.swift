@@ -82,7 +82,7 @@ struct StockListView: View {
 
             HStack {
                 Text("Stock")
-                    .font(.system(size: 34, weight: .heavy))
+                    .font(.publicSans(size: 34, weight: .heavy))
                     .foregroundStyle(Color.larderInk)
                 Spacer()
                 Menu {
@@ -100,7 +100,7 @@ struct StockListView: View {
                         Image(systemName: "checkmark.rectangle")
                             .font(.system(size: 13, weight: .medium))
                         Text("Count")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.publicSans(size: 12, weight: .semibold))
                     }
                     .foregroundStyle(Color.larderAccent)
                     .padding(.horizontal, 12)
@@ -117,7 +117,7 @@ struct StockListView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color.larderSecondaryText)
                 TextField("Search name or barcode", text: $searchText)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.publicSans(size: 15, weight: .medium))
                     .foregroundStyle(Color.larderInk)
                     .padding(.vertical, 6)
             }
@@ -160,7 +160,7 @@ struct StockListView: View {
                             Divider().overlay(Color.larderDivider)
                         }
                         Text("\(visibleItems.count) of \(store.items.count) products shown")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.publicSans(size: 11.5, weight: .semibold))
                             .foregroundStyle(Color.larderFaint)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 20)
@@ -234,7 +234,7 @@ struct StockListView: View {
     private func filterChip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.publicSans(size: 12.5, weight: .medium))
                 .foregroundStyle(isOn ? Color.larderOnAccent : Color.larderInk)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
@@ -323,20 +323,20 @@ struct StockRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .lastTextBaseline, spacing: 10) {
                     Text(item.name)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.publicSans(size: 16, weight: .bold))
                         .foregroundStyle(Color.larderInk)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
                     Text(quantityParts.value)
-                        .font(.system(size: 19, weight: .heavy))
+                        .font(.publicSans(size: 19, weight: .heavy))
                         .foregroundStyle(Color.larderInk)
                     Text(quantityParts.unit)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.publicSans(size: 11, weight: .semibold))
                         .foregroundStyle(Color.larderSecondaryText)
                 }
                 Text(earliest.map { "\($0.formatted(.iso8601.year().month().day())) · \($0.relativeDayLabel)" } ?? "no best-before date")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.publicSans(size: 11.5, weight: .semibold))
                     .foregroundStyle(isUrgent ? Color.larderWarn : Color.larderSecondaryText)
 
                 if lots.count > 1 {

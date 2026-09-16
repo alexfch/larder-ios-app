@@ -62,7 +62,7 @@ struct ItemDetailView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 12, weight: .bold))
                         Text(backLabel)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.publicSans(size: 11.5, weight: .medium))
                     }
                     .foregroundStyle(Color.larderSecondaryText)
                 }
@@ -70,10 +70,10 @@ struct ItemDetailView: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text(item.name)
-                            .font(.system(size: 27, weight: .heavy))
+                            .font(.publicSans(size: 27, weight: .heavy))
                             .foregroundStyle(Color.larderInk)
                         Text("\(item.barcode ?? "no barcode") · counted in \(item.quantityUnitSuffix(for: 1))")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.publicSans(size: 11.5, weight: .semibold))
                             .foregroundStyle(Color.larderSecondaryText)
                     }
                     Spacer(minLength: 8)
@@ -110,16 +110,16 @@ struct ItemDetailView: View {
                     if sortedLots.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Nothing on the shelf.")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.publicSans(size: 15, weight: .bold))
                             Text("This product is in the catalog but has no stock. Check a batch in and it will appear here, oldest first.")
-                                .font(.system(size: 12.5))
+                                .font(.publicSans(size: 12.5))
                                 .foregroundStyle(Color.larderInk2)
                             Button {
                                 activeSheet = .checkIn
                             } label: {
                                 HStack(spacing: 10) {
                                     Text("Check some in")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.publicSans(size: 12, weight: .semibold))
                                     Image(systemName: "arrow.down")
                                         .font(.system(size: 13, weight: .semibold))
                                 }
@@ -153,22 +153,22 @@ struct ItemDetailView: View {
                     if sortedTransactions.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("No movements yet.")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.publicSans(size: 14, weight: .bold))
                             Text("Every check-in and check-out lands here as a dated line you can correct later.")
-                                .font(.system(size: 12.5))
+                                .font(.publicSans(size: 12.5))
                                 .foregroundStyle(Color.larderInk2)
                             VStack(alignment: .leading, spacing: 9) {
                                 Text("How this product is tracked")
-                                    .font(.system(size: 11.5, weight: .medium))
+                                    .font(.publicSans(size: 11.5, weight: .medium))
                                     .foregroundStyle(Color.larderSecondaryText)
                                 ForEach(trackingFacts, id: \.key) { fact in
                                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                                         Text(fact.key)
-                                            .font(.system(size: 11.5, weight: .semibold))
+                                            .font(.publicSans(size: 11.5, weight: .semibold))
                                             .foregroundStyle(Color.larderSecondaryText)
                                             .frame(width: 96, alignment: .leading)
                                         Text(fact.value)
-                                            .font(.system(size: 13, weight: .semibold))
+                                            .font(.publicSans(size: 13, weight: .semibold))
                                     }
                                 }
                             }
@@ -251,10 +251,10 @@ struct ItemDetailView: View {
     private func statBlock(value: String, label: String, valueColor: Color = .larderInk) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(value)
-                .font(.system(size: 24, weight: .heavy))
+                .font(.publicSans(size: 24, weight: .heavy))
                 .foregroundStyle(valueColor)
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.publicSans(size: 11, weight: .semibold))
                 .foregroundStyle(Color.larderSecondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -268,7 +268,7 @@ struct ItemDetailView: View {
             Rectangle().fill(barColor).frame(width: 3).frame(maxHeight: .infinity)
             VStack {
                 Text(String(format: "%02d", index + 1))
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.publicSans(size: 15, weight: .heavy))
                     .foregroundStyle(barColor)
             }
             .frame(width: 44)
@@ -277,9 +277,9 @@ struct ItemDetailView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.packageOpenStatusText(for: lot.qty) ?? item.formattedQuantity(lot.qty))
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.publicSans(size: 16, weight: .bold))
                 Text(lot.exp.formattedExpirationDate + (lot.exp.map { " · \($0.relativeDayLabel)" } ?? ""))
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.publicSans(size: 11.5, weight: .semibold))
                     .foregroundStyle(Color.larderSecondaryText)
             }
             .padding(.horizontal, 12)
@@ -289,7 +289,7 @@ struct ItemDetailView: View {
 
             if index == 0 {
                 Text("Use first")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.publicSans(size: 11, weight: .medium))
                     .foregroundStyle(barColor)
                     .padding(.trailing, 12)
             }
@@ -318,15 +318,15 @@ struct HistoryRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(actionLabel)
                     .trackedUppercase()
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.publicSans(size: 11, weight: .medium))
                     .foregroundStyle(Color.larderInk)
                 Text("\(transaction.occurredAt.formatted(.iso8601.year().month().day())) \(transaction.occurredAt.formatted(date: .omitted, time: .shortened)) · bb \(transaction.exp.formattedExpirationDate)")
-                    .font(.system(size: 12))
+                    .font(.publicSans(size: 12))
                     .foregroundStyle(Color.larderSecondaryText)
             }
             Spacer()
             Text(signedQuantity)
-                .font(.system(size: 17, weight: .heavy))
+                .font(.publicSans(size: 17, weight: .heavy))
                 .foregroundStyle(transaction.action == .checkIn ? Color.larderAccent : Color.larderInk)
         }
         .padding(.vertical, 4)
