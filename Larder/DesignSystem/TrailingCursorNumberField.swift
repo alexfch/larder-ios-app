@@ -20,6 +20,10 @@ struct TrailingCursorNumberField: UIViewRepresentable {
     /// e.g. matching `LarderFont.quantityValue()` in `QuantitySheetView` -- pass it here instead.
     var font: UIFont = .systemFont(ofSize: 17)
 
+    /// Single source of truth for the upper bound, shared by every caller that needs to clamp
+    /// against it (e.g. `QuantitySheetView`'s +/- stepper) instead of redeclaring the literal.
+    static let maxValue: Double = 9999.999
+
     private static let decimalFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -50,55 +54,80 @@ struct TrailingCursorNumberField: UIViewRepresentable {
         textField.placeholder = placeholder
         textField.font = font
         textField.addTarget(context.coordinator, action: #selector(Coordinator.textChanged), for: .editingChanged)
-        textField.addTarget(context.coordinator, action: #selector(Coordinator.textField), for: .editingChanged)
         return textField
     }
 
     func updateUIView(_ uiView: UITextField, context: Context) {
         context.coordinator.parent = self
         uiView.font = font
-        // Never overwrite text the user is actively typing — only push the SwiftUI-side value
-        // in when the field isn't first responder (e.g. the initial value, or a change made
-        // elsewhere, like the +/- stepper on the unit-quantity variant of this form).
-        guard !uiView.isFirstResponder else { return }
+        // `lastCommittedValue` is the value the coordinator itself last pushed (from a
+        // keystroke or from here). When `value` still matches it, this call is just SwiftUI's
+        // binding round-tripping our own edit back in — leave the text alone so we don't stomp
+        // in-progress input like a trailing decimal point. When it differs, `value` changed from
+        // outside this field's own typing (e.g. the +/- stepper), so push the new text in and,
+        // if the field is still focused, keep the cursor at the end -- this is what makes typing
+        // and the +/- buttons stay consistent with each other regardless of which one last ran.
+        guard value != context.coordinator.lastCommittedValue else { return }
+        context.coordinator.lastCommittedValue = value
         uiView.text = formatter.string(from: NSNumber(value: value)) ?? "0"
+        guard uiView.isFirstResponder else { return }
+        let end = uiView.endOfDocument
+        uiView.selectedTextRange = uiView.textRange(from: end, to: end)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
+    /// Pure, UIKit-independent edit validation so the accept/reject rule is unit-testable
+    /// without a live `UITextField`, and so it can share the formatter's own limits instead of
+    /// re-declaring them (a previous version hardcoded ".", "3", and the max value separately
+    /// here, which could silently drift from the formatter's configuration).
+    static func acceptsEdit(
+        to currentText: String,
+        in range: NSRange,
+        replacementString string: String,
+        maxValue: Double,
+        maxFractionDigits: Int,
+        decimalSeparator: String
+    ) -> Bool {
+        guard let stringRange = Range(range, in: currentText) else { return false }
+        let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
+
+        if updatedText.isEmpty { return true }
+
+        // `Double.init?(String)` only recognizes "." as a decimal point, but `.decimalPad`
+        // inserts the locale's own separator (e.g. "," in most European locales) -- normalize
+        // to "." before parsing so typing a fraction works outside "." locales too.
+        let normalizedText = updatedText.replacingOccurrences(of: decimalSeparator, with: ".")
+        guard let doubleValue = Double(normalizedText) else { return false }
+        guard doubleValue <= maxValue else { return false }
+
+        let components = updatedText.components(separatedBy: decimalSeparator)
+        guard components.count <= 2 else { return false }
+        guard components.count < 2 || components[1].count <= maxFractionDigits else { return false }
+        return true
+    }
+
     final class Coordinator: NSObject, UITextFieldDelegate {
         var parent: TrailingCursorNumberField
+        // Forced to something `value` can never legitimately equal on the first call, so the
+        // field's initial text always gets populated on the first `updateUIView`.
+        var lastCommittedValue: Double = .nan
 
         init(_ parent: TrailingCursorNumberField) {
             self.parent = parent
         }
-        
-        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            
-            let maxQuantity = 9999.999 as Double
-            
-            let currentText = textField.text ?? ""
-            
-            guard let stringRange = Range(range, in: currentText) else { return false }
-            let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
 
-            if updatedText.isEmpty { return true }
-            
-            guard let doubleValue = Double(updatedText) else { return false }
-                
-            if doubleValue > maxQuantity { return false }
-            
-            if updatedText.contains(".") {
-                let components = updatedText.components(separatedBy: ".")
-                guard components.count <= 2 else { return false }
-                let fractionalPart = components[1]
-                return fractionalPart.count <= 3
-            }
-            else {
-                return true
-            }
+        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+            TrailingCursorNumberField.acceptsEdit(
+                to: textField.text ?? "",
+                in: range,
+                replacementString: string,
+                maxValue: TrailingCursorNumberField.maxValue,
+                maxFractionDigits: parent.formatter.maximumFractionDigits,
+                decimalSeparator: parent.formatter.decimalSeparator
+            )
         }
 
         @objc func textChanged(_ textField: UITextField) {
@@ -106,6 +135,7 @@ struct TrailingCursorNumberField: UIViewRepresentable {
             // leave the bound value as-is rather than snapping it to 0 mid-edit.
             guard let text = textField.text,
                   let number = parent.formatter.number(from: text) else { return }
+            lastCommittedValue = number.doubleValue
             parent.value = number.doubleValue
         }
 

@@ -17,7 +17,9 @@ struct QuantitySheetView: View {
     let mode: QuantitySheetMode
     
     @State private var quantity: Double
-    @State private var maxQuantity: Double = 9999.999
+    // Shared with `TrailingCursorNumberField`'s own upper bound so the +/- stepper and the
+    // keyboard-typed limit can't drift apart.
+    private let maxQuantity = TrailingCursorNumberField.maxValue
     @State private var expDate: Date
     @State private var selectedLot: Lot?
     @State private var errorMessage: String?
